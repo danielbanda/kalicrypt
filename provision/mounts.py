@@ -206,24 +206,23 @@ def mount_targets_safe(device: str, dry_run: bool=False) -> Mounts:
             raise SystemExit(f"mount failed: {' '.join(cmd)} | err={r.err or r.out}")
 
     # Root logical volume path
-    root_dev = dm.root_lv_path or f"/dev/mapper/{dm.vg}-{dm.lv}"
+    root_dev = getattr(dm, "root_lv_path", None) or f"/dev/mapper/{dm.vg}-{dm.lv}"
     # Attempt mount directly
     _try_mount(root_dev, mnt, fstype="ext4", opts=["rw"])
     _try_mount(dm.p2, boot, fstype="ext4", opts=["rw"])
     _try_mount(dm.p1, esp, fstype="vfat", opts=["rw"])
 
-    # Validate sources match expectations
-    def canon(p):
-        res = run(["readlink","-f", p], check=False); return (res.out or p).strip()
-    pairs = [("root", canon(run(["findmnt","-no","SOURCE", mnt], check=False).out or "").strip(), canon(root_dev)),
-             ("boot", canon(run(["findmnt","-no","SOURCE", boot], check=False).out or "").strip(), canon(dm.p2)),
-             ("esp",  canon(run(["findmnt","-no","SOURCE", esp], check=False).out or "").strip(),  canon(dm.p1))]
-    mismatches = []
-    for label, actual, expected in pairs:
-        if not actual or not expected: mismatches.append((label, actual, expected))
-        elif actual != expected: mismatches.append((label, actual, expected))
-    if mismatches:
-        parts = [f"{label}: actual={a} expected={e}" for (label,a,e) in mismatches]
-        raise SystemExit("mount sources mismatch: " + " ; ".join(parts))
+    # Validate sources match expectations using the more robust helper that
+    # compares canonical paths as well as UUIDs.  This avoids false positives
+    # when device-mapper nodes appear under different aliases such as
+    # ``/dev/mapper/<name>`` vs ``/dev/dm-<n>`` during postcheck flows.
+    assert_mount_sources(
+        mnt=mnt,
+        boot=boot,
+        esp=esp,
+        root_dev=root_dev,
+        boot_dev=dm.p2,
+        esp_dev=dm.p1,
+    )
 
     return Mounts(mnt=mnt, boot=boot, esp=esp)
