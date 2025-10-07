@@ -60,12 +60,11 @@ def _have_three_parts(device: str, dry_run: bool=False) -> bool:
     out = run(["sgdisk","-p", device], check=False, dry_run=dry_run).out
     return bool(out and re.search(r"\n\s*1\s+|\n\s*2\s+|\n\s*3\s+", out))
 
-def apply_layout(device: str, esp_mb: int, boot_mb: int, dry_run: bool=False, full_run: bool=False):
+def apply_layout(device: str, esp_mb: int, boot_mb: int, dry_run: bool=False):
     guard_not_live_root(device)
     precleanup(device, dry_run=dry_run)
-    if full_run:
-        for p in (device+"p1", device+"p2", device+"p3"):
-            run(["wipefs","-a", p], check=False, dry_run=dry_run)
+    for p in (device+"p1", device+"p2", device+"p3"):
+        run(["wipefs","-a", p], check=False, dry_run=dry_run)
     # Try sgdisk, fallback to parted, retry up to 3 times
     ok = False
     for attempt in range(3):

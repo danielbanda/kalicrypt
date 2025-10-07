@@ -23,7 +23,7 @@ python -m provision /dev/nvme0n1 --passphrase-file ~/secret.txt --yes --do-postc
 
 - `--plan` and `--dry-run` are **strictly non-destructive** and print a JSON plan.
 - `--do-postcheck` (by itself) is **non-destructive**: it opens the LUKS volume, mounts the target root, installs the post-boot checker, writes the recovery doc, unmounts and closes.
-- `--yes` performs the full provision (partitioning, LUKS/LVM, rsync, firmware, boot plumbing, initramfs). In full-run, `--skip-rsync` is disallowed.
+- `--yes` performs the full provision (partitioning, LUKS/LVM, rsync, firmware, boot plumbing, initramfs).
 
 ## Keyfile
 
