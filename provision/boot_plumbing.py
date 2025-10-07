@@ -51,11 +51,13 @@ def write_cmdline(
 ):
     p = os.path.join(dst_boot_fw, 'cmdline.txt')
     mapper_path = _resolve_root_mapper(root_mapper, vg, lv)
-    cmd = (
-        f"cryptdevice=UUID={luks_uuid}:cryptroot "
-        f"root={mapper_path} "
-        "rootfstype=ext4 rootwait"
-    )
+    cmd_parts = [
+        f"cryptdevice=UUID={luks_uuid}:cryptroot",
+        f"root={mapper_path}",
+        "rootfstype=ext4",
+        "rootwait",
+    ]
+    cmd = " ".join(cmd_parts)
     if os.path.exists(p):
         try:
             txt = open(p, 'r', encoding='utf-8').read().strip()
@@ -64,7 +66,7 @@ def write_cmdline(
         if txt == cmd:
             return
     with open(p, 'w', encoding='utf-8') as f:
-        f.write(cmd + "\n")
+        f.write(f"{cmd}\n")
         try:
             f.flush()
             os.fsync(f.fileno())
