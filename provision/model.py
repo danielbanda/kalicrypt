@@ -26,6 +26,7 @@ class DeviceMap:
     luks_name: str = "cryptroot"
     vg: str = "rp5vg"
     lv: str = "root"
+    root_lv_path: str | None = None
 
 @dataclass
 class Mounts:
