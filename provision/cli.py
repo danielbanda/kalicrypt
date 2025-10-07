@@ -191,7 +191,7 @@ def _plan_payload(plan: ProvisionPlan, flags: Flags, root_src: str) -> Dict[str,
         pass
     try:
         lsblk_verbose = run(["lsblk", "-O", plan.device], check=False)
-        if getattr(lsblk_verbose, "out", "").strip():
+        if getattr(lsblk_verbose, "out", "").strip().splitlines():
             state["lsblk_verbose"] = lsblk_verbose.out.strip().splitlines()
     except Exception:
         pass
