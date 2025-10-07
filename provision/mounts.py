@@ -166,7 +166,7 @@ def mount_targets_safe(device: str, dry_run: bool=False) -> Mounts:
         if opts: cmd += ["-o", ",".join(opts)]
         cmd += [dev, target]
         r = run(cmd, check=False)
-        if r.exit != 0:
+        if r.rc != 0:
             # surface diagnostics
             raise SystemExit(f"mount failed: {' '.join(cmd)} | err={r.err or r.out}")
 
