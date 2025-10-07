@@ -1,6 +1,8 @@
 """Mount helpers (Phase 5.1)."""
 from subprocess import CalledProcessError
 import os
+import stat
+import time
 
 from .model import Mounts, DeviceMap
 from .executil import run, udev_settle, trace
@@ -19,9 +21,22 @@ def _mkfs(dev: str, fstype: str, label: str | None):
             args += ["-n", label]
         else:
             args += ["-L", label]
-    run(args + [dev], check=True, timeout=360.0)
+    try:
+        run(args + [dev], check=True, timeout=360.0)
+    except CalledProcessError as exc:
+        msg = (exc.stderr or exc.stdout or "").strip() or f"exit status {exc.returncode}"
+        trace(
+            "mounts.mkfs_error",
+            device=dev,
+            fstype=fstype,
+            rc=exc.returncode,
+            stderr=(exc.stderr or "").strip(),
+            stdout=(exc.stdout or "").strip(),
+        )
+        raise RuntimeError(f"mkfs.{fstype} failed on {dev}: {msg}") from exc
 
 def _ensure_fs(dev: str, fstype: str, label: str | None=None):
+    _await_block_device(dev, timeout=15.0)
     cur = _blkid_type(dev)
     if cur == fstype:
         return
@@ -57,6 +72,17 @@ def _root_lv_path(dm: DeviceMap) -> str:
     raise SystemExit("unable to determine root logical volume path from device map")
 
 
+def _is_block_device(path: str) -> bool:
+    try:
+        st = os.stat(path)
+    except FileNotFoundError:
+        return False
+    except OSError as exc:  # noqa: PERF203 - surface unexpected stat failures
+        trace("mounts.stat_error", path=path, error=str(exc))
+        return False
+    return stat.S_ISBLK(st.st_mode)
+
+
 def _root_lv_exists(dm: DeviceMap) -> bool:
     """Return ``True`` when the root logical volume path is available.
 
@@ -70,7 +96,37 @@ def _root_lv_exists(dm: DeviceMap) -> bool:
     """
 
     root_path = dm.root_lv_path or _root_lv_path(dm)
-    return bool(root_path) and os.path.exists(root_path)
+    return bool(root_path) and _is_block_device(root_path)
+
+
+def _await_block_device(path: str, timeout: float = 10.0, settle: bool = True) -> None:
+    """Wait until ``path`` resolves to a block device.
+
+    Device-mapper nodes can take a short while to appear after LVM commands
+    return.  Poll the filesystem for up to ``timeout`` seconds, asking udev to
+    settle between attempts so follow-up operations (``mkfs``, ``mount``) do
+    not fail spuriously.
+    """
+
+    deadline = time.monotonic() + timeout
+    trace("mounts.await_block.start", path=path, timeout=timeout)
+    while True:
+        if _is_block_device(path):
+            trace("mounts.await_block.ready", path=path)
+            return
+        now = time.monotonic()
+        if now >= deadline:
+            break
+        trace("mounts.await_block.retry", path=path, remaining=max(0.0, deadline - now))
+        if settle:
+            udev_settle()
+        time.sleep(0.1)
+
+    if not os.path.exists(path):
+        raise RuntimeError(
+            f"block device {path!r} did not appear within {timeout:.1f}s"
+        )
+    raise RuntimeError(f"{path!r} exists but is not a block device")
 
 
 def _activate_vg(dm: DeviceMap):
@@ -127,15 +183,17 @@ def mount_targets(device: str, dry_run: bool=False, destructive: bool=True) -> M
     # inactive (for example when provisioning over an existing install where
     # ``vgcreate``/``lvcreate`` are no-ops).
     _activate_vg(dm)
+    root_lv = _root_lv_path(dm)
+    _await_block_device(root_lv, timeout=15.0)
     udev_settle()
     # ensure fs only when destructive
     if destructive:
         _ensure_fs(dm.p1, "vfat", label="EFI")
         _ensure_fs(dm.p2, "ext4", label="boot")
-        _ensure_fs(_root_lv_path(dm), "ext4", label="root")
+        _ensure_fs(root_lv, "ext4", label="root")
     # mount (ro when non-destructive)
     ro_opts = ["ro"] if not destructive else None
-    _mount(_root_lv_path(dm), mnt, fstype="ext4", opts=ro_opts)
+    _mount(root_lv, mnt, fstype="ext4", opts=ro_opts)
     _mount(dm.p2, boot, fstype="ext4", opts=ro_opts)
     #_mount(dm.p1, esp, fstype="vfat", opts=(ro_opts or ["umask=0077"]))  # keep umask on rw too
     # Keep the ESP permissions tight even on read-only verification mounts.
