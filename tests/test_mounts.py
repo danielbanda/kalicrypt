@@ -6,8 +6,10 @@ from provision import mounts
 
 
 class DummyResult:
-    def __init__(self, out: str = "") -> None:
+    def __init__(self, out: str = "", rc: int = 0, err: str = "") -> None:
         self.out = out
+        self.rc = rc
+        self.err = err
 
 
 def test_mount_targets_formats_and_mounts(monkeypatch):
@@ -68,7 +70,7 @@ def test_mount_targets_read_only_mode_guards(monkeypatch):
         lambda device, dry_run=False: SimpleNamespace(p1="/dev/p1", p2="/dev/p2", p3="/dev/p3"),
     )
 
-    mounts.mount_targets("/dev/nvme0n1", destructive=False)
+    mounts.mount_targets("/dev/nvme0n1")
 
     mkfs_calls = [
         cmd for cmd in commands if cmd and cmd[0] in {"mkfs.vfat", "mkfs.ext4"}
@@ -149,3 +151,27 @@ def test_assert_mount_sources_detects_mismatch(monkeypatch):
         )
 
     assert "boot" in str(excinfo.value)
+
+
+def test_mount_targets_safe_raises_on_failed_mount(monkeypatch):
+    observed: list[list[str]] = []
+
+    def fake_run(cmd, check=True, **_kwargs):  # noqa: ARG001
+        observed.append(cmd)
+        if cmd and cmd[0] == "mount" and "/dev/mapper/rp5vg-root" in cmd:
+            return DummyResult("", rc=32, err="mount failed")
+        return DummyResult("")
+
+    monkeypatch.setattr(mounts, "run", fake_run)
+    monkeypatch.setattr(mounts, "udev_settle", lambda: None)
+    monkeypatch.setattr(
+        mounts,
+        "probe",
+        lambda device, dry_run=False: SimpleNamespace(p1="/dev/p1", p2="/dev/p2", vg="rp5vg", lv="root"),
+    )
+
+    with pytest.raises(SystemExit) as excinfo:
+        mounts.mount_targets_safe("/dev/nvme0n1")
+
+    assert "mount failed" in str(excinfo.value)
+    assert any(cmd for cmd in observed if cmd and cmd[0] == "mount")
