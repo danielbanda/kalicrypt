@@ -94,29 +94,29 @@ def _write_json_artifact(name: str, data: Dict[str, Any]) -> str:
 def _log_mounts() -> None:
     try:
         result = run(["findmnt", "-R", "/mnt/nvme"], check=False)
-        if getattr(result, "out", None):
-            print("[DIAG] findmnt -R /mnt/nvme:")
-            print(result.out)
+        # if getattr(result, "out", None):
+        #     print("[DIAG] findmnt -R /mnt/nvme:")
+        #     print(result.out)
     except Exception:
         pass
     try:
         result = run(["lsblk", "-f"], check=False)
-        if getattr(result, "out", None):
-            print("[DIAG] lsblk -f:")
-            print(result.out)
+        # if getattr(result, "out", None):
+        #     print("[DIAG] lsblk -f:")
+        #     print(result.out)
     except Exception:
         pass
     try:
         result = run(["mount"], check=False)
-        if getattr(result, "out", None):
-            lines = [
-                ln
-                for ln in result.out.splitlines()
-                if "/mnt/nvme" in ln or "/mapper" in ln
-            ]
-            if lines:
-                print("[DIAG] mount lines for /mnt/nvme and /mapper:")
-                print("\n".join(lines))
+        # if getattr(result, "out", None):
+        #     lines = [
+        #         ln
+        #         for ln in result.out.splitlines()
+        #         if "/mnt/nvme" in ln or "/mapper" in ln
+        #     ]
+        #     if lines:
+        #         print("[DIAG] mount lines for /mnt/nvme and /mapper:")
+        #         print("\n".join(lines))
     except Exception:
         pass
 
