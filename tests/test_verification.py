@@ -1,5 +1,7 @@
 import types
 
+import pytest
+
 from provision import verification
 
 
@@ -41,3 +43,119 @@ def test_run_does_not_add_sudo_when_root(monkeypatch):
 
     assert captured["cmd"] == ["cryptsetup", "luksUUID", "/dev/nvme0n1p3"]
     assert result["cmd"] == captured["cmd"]
+
+
+def test_verify_sources_success(monkeypatch):
+    mapping = {
+        "/mnt/nvme": "/dev/mapper/rp5vg-root",
+        "/mnt/nvme/boot": "/dev/nvme0n1p2",
+        "/mnt/nvme/boot/firmware": "/dev/nvme0n1p1",
+    }
+
+    monkeypatch.setattr(verification, "_findmnt_source", lambda mp: mapping[mp])
+    monkeypatch.setattr(verification, "_canon", lambda path: path)
+
+    result = verification.verify_sources(
+        "/mnt/nvme",
+        "/mnt/nvme/boot",
+        "/mnt/nvme/boot/firmware",
+        "/dev/mapper/rp5vg-root",
+        "/dev/nvme0n1p2",
+        "/dev/nvme0n1p1",
+    )
+
+    assert result["sources"]["root"]["matches"]
+    assert result["sources"]["boot"]["matches"]
+    assert result["sources"]["esp"]["matches"]
+
+
+def test_verify_sources_mismatch(monkeypatch):
+    mapping = {
+        "/mnt/nvme": "/dev/mapper/rp5vg-root",
+        "/mnt/nvme/boot": "/dev/nvme0n1p2",
+        "/mnt/nvme/boot/firmware": "/dev/sdb1",
+    }
+
+    monkeypatch.setattr(verification, "_findmnt_source", lambda mp: mapping[mp])
+    monkeypatch.setattr(verification, "_canon", lambda path: path)
+
+    with pytest.raises(RuntimeError):
+        verification.verify_sources(
+            "/mnt/nvme",
+            "/mnt/nvme/boot",
+            "/mnt/nvme/boot/firmware",
+            "/dev/mapper/rp5vg-root",
+            "/dev/nvme0n1p2",
+            "/dev/nvme0n1p1",
+        )
+
+
+def test_verify_fs_and_uuid_warns_on_uuid(monkeypatch):
+    monkeypatch.setattr(verification, "_fstype_of", lambda dev: {"p1": "vfat", "p2": "ext4"}.get(dev, ""))
+
+    uuid_map = {"p1": "UUID-A", "p2": "UUID-B", "p3": "UUID-C"}
+    monkeypatch.setattr(verification, "_uuid_of", lambda dev: uuid_map[dev])
+
+    result = verification.verify_fs_and_uuid(
+        "p1",
+        "p2",
+        "p3",
+        exp_uuid_p1="UUID-EXP-A",
+        exp_uuid_p2="UUID-B",
+        exp_uuid_luks="UUID-EXP-C",
+    )
+
+    assert "p1 uuid differs" in result["warnings"][0]
+    assert "luks uuid differs" in result["warnings"][1]
+
+
+def test_verify_fs_and_uuid_fstype_mismatch(monkeypatch):
+    monkeypatch.setattr(verification, "_fstype_of", lambda dev: "ext4")
+
+    with pytest.raises(RuntimeError):
+        verification.verify_fs_and_uuid("p1", "p2", "p3")
+
+
+def test_verify_triplet_success(tmp_path):
+    esp_dir = tmp_path / "boot" / "firmware"
+    esp_dir.mkdir(parents=True)
+    etc_dir = tmp_path / "etc"
+    etc_dir.mkdir()
+
+    (esp_dir / "cmdline.txt").write_text(
+        "cryptdevice=UUID=abc123:cryptroot root=/dev/mapper/rp5vg-root rootwait"
+    )
+    (etc_dir / "crypttab").write_text("cryptroot UUID=abc123 none\n")
+    (etc_dir / "fstab").write_text("/dev/mapper/rp5vg-root / ext4 defaults 0 1\n")
+    (esp_dir / "initramfs_2712").write_text("dummy")
+
+    result = verification.verify_triplet(
+        str(tmp_path),
+        "boot/firmware",
+        "rp5vg",
+        "root",
+        expected_luks_uuid="abc123",
+    )
+
+    assert result["warnings"] == []
+    assert result["initramfs"]["matches"]
+
+
+def test_verify_triplet_missing_cryptroot(tmp_path):
+    esp_dir = tmp_path / "boot" / "firmware"
+    esp_dir.mkdir(parents=True)
+    etc_dir = tmp_path / "etc"
+    etc_dir.mkdir()
+
+    (esp_dir / "cmdline.txt").write_text("root=/dev/mapper/rp5vg-root")
+    (etc_dir / "crypttab").write_text("# missing entry\n")
+    (etc_dir / "fstab").write_text("/dev/mapper/rp5vg-root / ext4 defaults 0 1\n")
+    (esp_dir / "initramfs_2712").write_text("dummy")
+
+    with pytest.raises(RuntimeError):
+        verification.verify_triplet(
+            str(tmp_path),
+            "boot/firmware",
+            "rp5vg",
+            "root",
+        )
