@@ -1,4 +1,4 @@
-from provision.boot_plumbing import write_cmdline, write_fstab
+from provision.boot_plumbing import write_cmdline, write_crypttab, write_fstab
 
 
 def read(path):
@@ -15,9 +15,12 @@ def test_write_cmdline_overwrites_previous_content(tmp_path):
     write_cmdline(str(esp), "abcd-1234")
 
     txt = read(cmdline_path)
-    assert "cryptdevice=UUID=abcd-1234:cryptroot" in txt
-    assert "root=/dev/mapper/rp5vg-root" in txt
-    assert txt.endswith("\n")
+    expected = (
+        "cryptdevice=UUID=abcd-1234:cryptroot "
+        "root=/dev/mapper/rp5vg-root "
+        "rootfstype=ext4 rootwait\n"
+    )
+    assert txt == expected
 
     # Running a second time should leave the same content in place.
     write_cmdline(str(esp), "abcd-1234")
@@ -32,7 +35,21 @@ def test_write_fstab_populates_expected_entries(tmp_path):
     write_fstab(str(root), "uuid-esp", "uuid-boot")
 
     contents = read(etc_dir / "fstab")
-    assert "UUID=uuid-esp" in contents
-    assert "UUID=uuid-boot" in contents
-    assert "/dev/mapper/rp5vg-root" in contents
+    expected = (
+        "UUID=uuid-esp  /boot/firmware  vfat  defaults,uid=0,gid=0,umask=0077  0  1\n"
+        "UUID=uuid-boot  /boot  ext4  defaults  0  2\n"
+        "/dev/mapper/rp5vg-root  /  ext4  defaults  0  1\n"
+    )
+    assert contents == expected
     assert contents.endswith("\n")
+
+
+def test_write_crypttab_matches_template(tmp_path):
+    root = tmp_path / "mnt"
+    etc_dir = root / "etc"
+    etc_dir.mkdir(parents=True)
+
+    write_crypttab(str(root), "uuid-luks", "/home/admin/secret.txt")
+
+    contents = read(etc_dir / "crypttab")
+    assert contents == "cryptroot UUID=uuid-luks  /home/admin/secret.txt\n"

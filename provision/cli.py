@@ -80,9 +80,11 @@ def _emit_result(
 
 def _write_json_artifact(name: str, data: Dict[str, Any]) -> str:
     path = _log_path(name)
+    payload = dict(data)
+    payload["artifact"] = path
     try:
         with open(path, "w", encoding="utf-8") as f:
-            json.dump(data, f, indent=2)
+            json.dump(payload, f, indent=2)
     except Exception:
         pass
     return path
@@ -194,13 +196,18 @@ def _plan_payload(plan: ProvisionPlan, flags: Flags, root_src: str) -> Dict[str,
         "mode": "plan" if flags.plan else ("dry-run" if flags.dry_run else "full"),
         "plan": plan_block,
         "flags": vars(flags),
+        "uuids": {"p1": None, "p2": None, "luks": None},
         "state": state,
         "steps": _planned_steps(flags),
         "rsync": {
             "skip": flags.skip_rsync,
             "exclude_boot": True,
         },
-        "postcheck": {"requested": flags.do_postcheck},
+        "initramfs": {"image": None},
+        "postcheck": {
+            "requested": flags.do_postcheck,
+            **({"offer": "--do-postcheck"} if not flags.do_postcheck else {}),
+        },
         "timestamp": int(time.time()),
     }
     return payload
@@ -230,7 +237,7 @@ def _pre_sync_snapshot(max_mount_lines: int = 20) -> Dict[str, Any]:
 
 
 def _rsync_meta(res: Any) -> Dict[str, Any]:
-    meta: Dict[str, Any] = {"exit": None, "out": None, "err": None, "warning": None}
+    meta: Dict[str, Any] = {"exit": None, "out": None, "err": None, "warning": False, "note": None}
     try:
         if hasattr(res, "returncode"):
             meta["exit"] = res.returncode
@@ -253,7 +260,8 @@ def _rsync_meta(res: Any) -> Dict[str, Any]:
     if meta["exit"] is None:
         meta["exit"] = 0
     if meta["exit"] in (23, 24):
-        meta["warning"] = "partial transfer (vanished or permission-restricted files)"
+        meta["warning"] = True
+        meta["note"] = "partial transfer (vanished or permission-restricted files)"
     return meta
 
 
@@ -609,7 +617,7 @@ def main(argv: Optional[list[str]] = None) -> int:
     mounts = mount_targets(dm.device, dry_run=False, destructive=True)
     bind_mounts(mounts.mnt, read_only=False)
 
-    rsync_meta: Dict[str, Any] = {"exit": 0, "err": None, "out": None, "warning": None}
+    rsync_meta: Dict[str, Any] = {"exit": 0, "err": None, "out": None, "warning": False, "note": None}
     pre_sync_snapshot: Dict[str, Any] = {}
     postcheck_report: Optional[Dict[str, Any]] = None
     cleanup_stats: Optional[Dict[str, Any]] = None
@@ -697,6 +705,7 @@ def main(argv: Optional[list[str]] = None) -> int:
         "rsync": {
             "exit": rsync_meta.get("exit"),
             "warning": rsync_meta.get("warning"),
+            "note": rsync_meta.get("note"),
             "err": rsync_meta.get("err"),
             "summary": _rsync_summarize(rsync_meta.get("out") or ""),
         },
@@ -710,6 +719,10 @@ def main(argv: Optional[list[str]] = None) -> int:
         },
         "steps": planned_steps,
     }
+    if not flags.do_postcheck:
+        result_payload["postcheck"]["offer"] = "--do-postcheck"
+    artifact_path = _write_json_artifact("full", result_payload)
+    result_payload["artifact"] = artifact_path
     preboot_payload = dict(result_payload)
     preboot_payload["phase"] = "preboot"
     _record_result("ETE_PREBOOT_OK", preboot_payload)
