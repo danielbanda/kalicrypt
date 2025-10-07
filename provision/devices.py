@@ -53,17 +53,39 @@ def probe(device: str, dry_run: bool=False, read_only: bool | None = None) -> De
     # returns an arbitrary order.
     parts.sort(key=lambda c: c.get("name", ""))
 
-    if len(parts) < 3:
+
+    # Devices such as NVMe and MMC require a ``p`` separator before the
+    # partition index (``nvme0n1p1``), while others like ``sda`` do not.
+    base = device.rstrip("/") or device
+    suffix = "p" if base[-1:].isdigit() else ""
+
+    resolved = []
+    missing = []
+    for idx in range(3):
+        if idx < len(parts):
+            path = parts[idx].get("path") or parts[idx].get("name")
+            if path and not path.startswith("/"):
+                path = f"/dev/{path}"
+        else:
+            path = None
+        if not path:
+            path = f"{device}{suffix}{idx + 1}"
+            missing.append(idx + 1)
+        resolved.append(path)
+
+    if missing:
         labels = [child.get("partlabel") or child.get("name") or child.get("path") for child in parts]
-        details = ", ".join(filter(None, labels)) or "<none>"
-        raise SystemExit(
-            "device layout incomplete for {device}: expected three partitions, "
-            "found {count} ({details})".format(device=device, count=len(parts), details=details)
+        trace(
+            "devices.probe.missing_partitions",
+            device=device,
+            expected=3,
+            found=len(parts),
+            labels=labels,
+            missing=missing,
+            dry_run=dry_run,
         )
 
-    p1 = parts[0].get("path") or f"{device}p1"
-    p2 = parts[1].get("path") or f"{device}p2"
-    p3 = parts[2].get("path") or f"{device}p3"
+    p1, p2, p3 = resolved
 
     trace("devices.probe", device=device, p1=p1, p2=p2, p3=p3, dry_run=dry_run)
 
