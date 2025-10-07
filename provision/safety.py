@@ -1,4 +1,8 @@
-""" Guards and destructive-op refusals (skeleton). """
+"""Guards and destructive-op refusals (skeleton)."""
+
+from __future__ import annotations
+
+import os
 
 def guard_not_live_disk(device: str) -> tuple[bool, str]:
     """

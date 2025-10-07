@@ -18,6 +18,7 @@ from .boot_plumbing import (
     write_crypttab,
     write_fstab,
 )
+from . import safety
 from .devices import kill_holders, probe, swapoff_all, uuid_of
 from .executil import append_jsonl, run, trace, udev_settle
 from .firmware import assert_essentials, populate_esp
@@ -26,6 +27,7 @@ from .luks_lvm import close_luks, deactivate_vg, format_luks, make_vg_lv, open_l
 from .model import Flags, ProvisionPlan
 from .mounts import bind_mounts, mount_targets, unmount_all
 from .partitioning import apply_layout, verify_layout
+from .postcheck import cleanup_pycache, run_postcheck
 from .recovery import install_postboot_check, write_recovery_doc
 from .root_sync import rsync_root
 
@@ -311,6 +313,7 @@ def _require_passphrase(path: Optional[str]) -> str:
 
 def _run_postcheck_only(plan: ProvisionPlan, flags: Flags, passphrase_file: str) -> None:
     dm = probe(plan.device)
+    mounts = None
     open_luks(dm.p3, dm.luks_name, passphrase_file)
     mounts = mount_targets(dm.device, dry_run=False, destructive=False)
     bind_mounts(mounts.mnt, read_only=True)
@@ -323,6 +326,9 @@ def _run_postcheck_only(plan: ProvisionPlan, flags: Flags, passphrase_file: str)
 
         install_postboot_check(mounts.mnt)
         write_recovery_doc(mounts.mnt, luks_uuid)
+
+        cleanup = cleanup_pycache(mounts.mnt)
+        postcheck = run_postcheck(mounts.mnt, luks_uuid, p1_uuid)
 
         rec_dir = os.path.expanduser("~/rp5/04_ARTIFACTS/recovery")
         os.makedirs(rec_dir, exist_ok=True)
@@ -345,6 +351,8 @@ def _run_postcheck_only(plan: ProvisionPlan, flags: Flags, passphrase_file: str)
                     "postboot_check": "/usr/local/sbin/rp5-postboot-check",
                     "recovery_doc": "/root/RP5_RECOVERY.md",
                 },
+                "cleanup": cleanup,
+                "report": postcheck,
                 "steps": [
                     "open_luks(p3, cryptroot, passphrase_file)",
                     "mount_targets(device)/bind",
@@ -361,10 +369,11 @@ def _run_postcheck_only(plan: ProvisionPlan, flags: Flags, passphrase_file: str)
             extra={"hint": "Failed postcheck-only flow", "error": str(exc)},
         )
     finally:
-        try:
-            unmount_all(mounts.mnt, boot=mounts.boot, esp=mounts.esp)
-        except Exception:
-            pass
+        if mounts is not None:
+            try:
+                unmount_all(mounts.mnt, boot=mounts.boot, esp=mounts.esp)
+            except Exception:
+                pass
         try:
             close_luks(dm.luks_name)
         except Exception:
@@ -409,6 +418,10 @@ def main(argv: Optional[list[str]] = None) -> int:
 
     if not os.path.exists(plan.device):
         _emit_result("FAIL_INVALID_DEVICE", extra={"device": plan.device})
+
+    ok, reason = safety.guard_not_live_disk(plan.device)
+    if not ok:
+        _emit_result("FAIL_SAFETY_GUARD", extra={"device": plan.device, "reason": reason})
 
     root_src = os.popen("findmnt -no SOURCE /").read().strip()
     if _same_underlying_disk(plan.device, root_src):
@@ -467,6 +480,8 @@ def main(argv: Optional[list[str]] = None) -> int:
     bind_mounts(mounts.mnt, read_only=False)
 
     rsync_meta: Dict[str, Any] = {"exit": 0, "err": None, "out": None}
+    postcheck_report: Optional[Dict[str, Any]] = None
+    cleanup_stats: Optional[Dict[str, Any]] = None
     try:
         populate_esp(mounts.esp, preserve_cmdline=True, preserve_config=True, dry_run=False)
         assert_essentials(mounts.esp)
@@ -498,6 +513,8 @@ def main(argv: Optional[list[str]] = None) -> int:
             try:
                 install_postboot_check(mounts.mnt)
                 write_recovery_doc(mounts.mnt, luks_uuid)
+                cleanup_stats = cleanup_pycache(mounts.mnt)
+                postcheck_report = run_postcheck(mounts.mnt, luks_uuid, p1_uuid)
             except Exception as exc:  # noqa: BLE001
                 print(f"[WARN] postcheck setup failed: {exc}")
 
@@ -552,6 +569,10 @@ def main(argv: Optional[list[str]] = None) -> int:
             "exit": rsync_meta.get("exit"),
             "err": rsync_meta.get("err"),
             "summary": _rsync_summarize(rsync_meta.get("out") or ""),
+        },
+        "postcheck": {
+            "report": postcheck_report,
+            "cleanup": cleanup_stats,
         },
         "steps": steps,
     }
