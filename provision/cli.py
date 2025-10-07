@@ -173,7 +173,7 @@ def _plan_payload(plan: ProvisionPlan, flags: Flags, root_src: str) -> Dict[str,
     dm = probe(plan.device, dry_run=True)
     state: Dict[str, Any] = {"root_source": root_src}
     holders = _holders_snapshot(plan.device)
-    state["holders"] = holders
+    state["holders"] = holders.splitlines() if holders else []
     try:
         lsblk = run(
             [
@@ -192,7 +192,7 @@ def _plan_payload(plan: ProvisionPlan, flags: Flags, root_src: str) -> Dict[str,
     try:
         lsblk_verbose = run(["lsblk", "-O", plan.device], check=False)
         if getattr(lsblk_verbose, "out", "").strip():
-            state["lsblk_verbose"] = lsblk_verbose.out.strip()
+            state["lsblk_verbose"] = lsblk_verbose.out.strip().splitlines()
     except Exception:
         pass
     state["same_underlying_disk"] = _same_underlying_disk(plan.device, root_src)
@@ -235,7 +235,7 @@ def _pre_sync_snapshot(max_mount_lines: int = 20) -> Dict[str, Any]:
     try:
         df_out = run(["df", "-h"], check=False)
         if getattr(df_out, "out", "").strip():
-            snapshot["df_h"] = df_out.out.strip()
+            snapshot["df_h"] = df_out.out.strip().splitlines()
     except Exception:
         pass
     try:
