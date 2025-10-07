@@ -1,4 +1,6 @@
 """Mount helpers (Phase 5.1)."""
+from subprocess import CalledProcessError
+
 from .model import Mounts, DeviceMap
 from .executil import run, udev_settle, trace
 from .devices import probe
@@ -54,6 +56,43 @@ def _root_lv_path(dm: DeviceMap) -> str:
     raise SystemExit("unable to determine root logical volume path from device map")
 
 
+def _activate_vg(dm: DeviceMap):
+    """Ensure the volume group backing ``dm`` is active.
+
+    ``vgchange`` occasionally fails with ``exit status 5`` immediately after
+    the LUKS container is opened because the LVM metadata cache has not been
+    refreshed yet.  Retry once after forcing a metadata scan so the
+    post-check-only flow can continue rather than crashing.
+    """
+
+    if not dm.vg:
+        return
+
+    def _do_activate():
+        run(["vgchange", "-ay", dm.vg], check=True)
+
+    try:
+        _do_activate()
+    except CalledProcessError as exc:
+        if exc.returncode != 5:
+            raise
+        trace(
+            "mounts.vgchange_retry",
+            vg=dm.vg,
+            rc=exc.returncode,
+            stderr=(exc.stderr or "").strip(),
+        )
+        run(["pvscan", "--cache"], check=False)
+        run(["vgscan", "--cache"], check=False)
+        try:
+            _do_activate()
+        except CalledProcessError as retry_exc:
+            msg = retry_exc.stderr or retry_exc.stdout or str(retry_exc)
+            raise SystemExit(
+                f"failed to activate volume group {dm.vg!r}: {msg.strip()}"
+            ) from retry_exc
+
+
 def mount_targets(device: str, dry_run: bool=False, destructive: bool=True) -> Mounts:
     dm: DeviceMap = probe(device, dry_run=dry_run)
     mnt = "/mnt/nvme"
@@ -69,8 +108,7 @@ def mount_targets(device: str, dry_run: bool=False, destructive: bool=True) -> M
     # active yet.  Ensure the volume group is brought online before mounting
     # anything from it.  ``vgchange -ay`` is safe to run even if the devices
     # are already active and matches the documented manual verification flow.
-    if dm.vg:
-        run(["vgchange", "-ay", dm.vg], check=True)
+    _activate_vg(dm)
     udev_settle()
     # mount (ro when non-destructive)
     ro_opts = ["ro"] if not destructive else None
