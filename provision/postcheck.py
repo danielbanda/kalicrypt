@@ -77,8 +77,7 @@ def run_postcheck(mnt: str, luks_uuid: str, p1_uuid: str|None=None, verbose: boo
     res["checks"].append({"cmdline": True})
 
     # 3) initramfs and kernel images present
-    bootdir = sorted(glob.glob(os.path.join(mnt))) # temp fix
-    # bootdir = os.path.join(mnt, "boot")
+    bootdir = os.path.join(mnt) # temp fix
     _require(bootdir)
     has_initramfs = any(name.startswith("initrd") or name.endswith(".img") for name in os.listdir(bootdir))
     if not has_initramfs:
