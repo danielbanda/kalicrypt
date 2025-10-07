@@ -168,9 +168,18 @@ def _plan_payload(plan: ProvisionPlan, flags: Flags, root_src: str) -> Dict[str,
     holders = _holders_snapshot(plan.device)
     state["holders"] = holders
     try:
-        lsblk = run(["lsblk", "-o", "NAME,SIZE,TYPE,MOUNTPOINT", plan.device], check=False)
-        if getattr(lsblk, "out", "").strip():
-            state["lsblk"] = lsblk.out.strip()
+        lsblk = run(
+            [
+                "lsblk",
+                "-o",
+                "NAME,TYPE,SIZE,RO,DISC-ALN,DISC-GRAN,DISC-MAX,DISC-ZERO,MOUNTPOINT",
+                plan.device,
+            ],
+            check=False,
+        )
+        out = (getattr(lsblk, "out", "") or "").strip()
+        if out:
+            state["lsblk"] = out.splitlines()
     except Exception:
         pass
     try:
