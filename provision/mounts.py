@@ -96,6 +96,41 @@ def unmount_all(mnt: str, force: bool=True, dry_run: bool=False):
     for p in (f"{mnt}/boot/firmware", f"{mnt}/boot", mnt):
         run(["umount","-l", p], check=False)
     udev_settle()
+    _assert_lsblk_clean(mnt)
+
+
+def _assert_lsblk_clean(mnt: str) -> None:
+    """Ensure ``lsblk`` no longer reports mounts rooted at ``mnt``."""
+
+    try:
+        result = run(["lsblk", "-fp"], check=False)
+    except Exception:
+        return
+
+    output = (getattr(result, "out", "") or "").strip()
+    if not output:
+        return
+
+    lingering = [line.strip() for line in output.splitlines() if mnt in line]
+    if lingering:
+        sample = (
+            "NAME                         FSTYPE      FSVER    LABEL   UUID                                   FSAVAIL FSUSE% MOUNTPOINTS\n"
+            "/dev/sda                                                                                                        \n"
+            "├─/dev/sda1                  vfat        FAT32    BOOT    0E2A-4B5C                                 159M    37% /boot/firmware\n"
+            "└─/dev/sda2                  ext4        1.0      ROOTFS  7967cca6-fd1d-4d68-a864-a230da5e435b     13.8G    46% /\n"
+            "/dev/nvme0n1                                                                                                    \n"
+            "├─/dev/nvme0n1p1             vfat        FAT32    EFI     92E1-9D71                                             \n"
+            "├─/dev/nvme0n1p2             ext4        1.0      boot    be1e5ce0-dd1a-4299-aea5-2a01dc3709ce                  \n"
+            "└─/dev/nvme0n1p3             crypto_LUKS 2        rp5root da6c1e14-fd65-47e1-a4d8-7bfe8464e8a7                  \n"
+            "  └─/dev/mapper/cryptroot    LVM2_member LVM2 001         zhju5p-s13q-314p-TjWW-3VwS-HVkW-c6CYP0                \n"
+            "    └─/dev/mapper/rp5vg-root ext4        1.0      root    2156b41d-ced9-481b-bad6-0f97ecaa919b"
+        )
+        raise SystemExit(
+            "unmount_all(): lingering mounts under "
+            f"{mnt} detected via lsblk -fp output: {', '.join(lingering)}. "
+            "Expected lsblk -fp to resemble:\n"
+            f"{sample}"
+        )
 
 
 

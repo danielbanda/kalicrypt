@@ -107,6 +107,19 @@ def test_unmount_all_unmounts_expected_paths(monkeypatch):
 
     def fake_run(cmd, check=True, **_kwargs):  # noqa: ARG001
         commands.append(cmd)
+        if cmd == ["lsblk", "-fp"]:
+            return DummyResult(
+                "NAME                         FSTYPE      FSVER    LABEL   UUID                                   FSAVAIL FSUSE% MOUNTPOINTS\n"
+                "/dev/sda                                                                                                        \n"
+                "├─/dev/sda1                  vfat        FAT32    BOOT    0E2A-4B5C                                 159M    37% /boot/firmware\n"
+                "└─/dev/sda2                  ext4        1.0      ROOTFS  7967cca6-fd1d-4d68-a864-a230da5e435b     13.8G    46% /\n"
+                "/dev/nvme0n1                                                                                                    \n"
+                "├─/dev/nvme0n1p1             vfat        FAT32    EFI     92E1-9D71                                             \n"
+                "├─/dev/nvme0n1p2             ext4        1.0      boot    be1e5ce0-dd1a-4299-aea5-2a01dc3709ce                  \n"
+                "└─/dev/nvme0n1p3             crypto_LUKS 2        rp5root da6c1e14-fd65-47e1-a4d8-7bfe8464e8a7                  \n"
+                "  └─/dev/mapper/cryptroot    LVM2_member LVM2 001         zhju5p-s13q-314p-TjWW-3VwS-HVkW-c6CYP0                \n"
+                "    └─/dev/mapper/rp5vg-root ext4        1.0      root    2156b41d-ced9-481b-bad6-0f97ecaa919b"
+            )
         return DummyResult("")
 
     monkeypatch.setattr(mounts, "run", fake_run)
@@ -121,6 +134,26 @@ def test_unmount_all_unmounts_expected_paths(monkeypatch):
     assert ["umount", "-l", "/mnt/test/boot/firmware"] in commands
     assert ["umount", "-l", "/mnt/test/boot"] in commands
     assert ["umount", "-l", "/mnt/test"] in commands
+    assert commands[-1] == ["lsblk", "-fp"]
+
+
+def test_unmount_all_raises_on_lingering_mount(monkeypatch):
+    def fake_run(cmd, check=True, **_kwargs):  # noqa: ARG001
+        if cmd == ["lsblk", "-fp"]:
+            return DummyResult(
+                "NAME FSTYPE FSVER LABEL UUID FSAVAIL FSUSE% MOUNTPOINTS\n"
+                "/dev/nvme0n1\n"
+                "└─/dev/nvme0n1p3 ext4 1.0 root 1234-ABCD        0% /mnt/test"
+            )
+        return DummyResult("")
+
+    monkeypatch.setattr(mounts, "run", fake_run)
+    monkeypatch.setattr(mounts, "udev_settle", lambda: None)
+
+    with pytest.raises(SystemExit) as excinfo:
+        mounts.unmount_all("/mnt/test")
+
+    assert "lingering mounts" in str(excinfo.value)
 
 
 def test_assert_mount_sources_detects_mismatch(monkeypatch):
