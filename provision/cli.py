@@ -414,6 +414,15 @@ def _holders_snapshot(device: str) -> str:
         return ""
 
 
+def _normalize_passphrase_path(path: Optional[str]) -> Optional[str]:
+    """Return an absolute filesystem path for ``--passphrase-file`` inputs."""
+
+    if not path:
+        return None
+    expanded = os.path.expanduser(path)
+    return os.path.abspath(expanded)
+
+
 def _require_passphrase(path: Optional[str], context: str = "default") -> str:
     def _hint(reason: str) -> Dict[str, Any]:
         base = "--passphrase-file must reference a non-empty file"
@@ -424,11 +433,13 @@ def _require_passphrase(path: Optional[str], context: str = "default") -> str:
             )
         return {"hint": base, "reason": reason}
 
-    if not path or not os.path.isfile(path):
+    normalized = _normalize_passphrase_path(path)
+
+    if not normalized or not os.path.isfile(normalized):
         _emit_result("FAIL_MISSING_PASSPHRASE", extra=_hint("missing"))
-    if os.path.getsize(path) == 0:
+    if os.path.getsize(normalized) == 0:
         _emit_result("FAIL_MISSING_PASSPHRASE", extra=_hint("empty"))
-    return os.path.abspath(path)
+    return normalized
 
 
 def _run_postcheck_only(plan: ProvisionPlan, flags: Flags, passphrase_file: str) -> None:
@@ -529,11 +540,13 @@ def main(argv: Optional[list[str]] = None) -> int:
         tpm_keyscript=args.tpm_keyscript,
         assume_yes=args.assume_yes,
     )
+    normalized_passphrase = _normalize_passphrase_path(args.passphrase_file)
+
     plan = ProvisionPlan(
         device=args.device,
         esp_mb=args.esp_mb,
         boot_mb=args.boot_mb,
-        passphrase_file=args.passphrase_file,
+        passphrase_file=normalized_passphrase,
     )
 
     if not os.path.exists(plan.device):
