@@ -142,11 +142,36 @@ def _preflight_errors(state: dict) -> list[str]:
 
 
 def _wipe_device(dev: str, *, discard: bool = True) -> None:
+    def _run_wipefs(*extra_args: str) -> None:
+        run(["wipefs", "-a", *extra_args, dev], check=True, timeout=120.0)
+
     try:
-        run(["wipefs", "-a", dev], check=True, timeout=120.0)
+        _run_wipefs()
     except CalledProcessError as exc:
         msg = (exc.stderr or exc.stdout or "").strip() or f"exit status {exc.returncode}"
-        raise MkfsError(f"wipefs failed on {dev}: {msg}", state=_collect_device_state(dev)) from exc
+        # ``wipefs`` occasionally reports ``cannot flush modified buffers`` on
+        # freshly created device-mapper nodes.  The metadata wipes succeed but
+        # the follow-up flush fails while udev is still settling, causing the
+        # provisioning flow to abort.  Retry with ``--no-sync`` so ``wipefs``
+        # skips the flush step in this specific scenario.  Keep the fallback
+        # narrowly scoped to avoid masking other unexpected errors.
+        if "cannot flush modified buffers" in msg.lower():
+            trace("mounts.wipefs_retry_no_sync", device=dev, message=msg)
+            try:
+                _run_wipefs("--no-sync")
+            except CalledProcessError:
+                raise MkfsError(
+                    f"wipefs failed on {dev}: {msg}",
+                    state=_collect_device_state(dev),
+                ) from exc
+            else:
+                trace("mounts.wipefs_retry_no_sync_success", device=dev)
+                msg = None
+        if msg:
+            raise MkfsError(
+                f"wipefs failed on {dev}: {msg}",
+                state=_collect_device_state(dev),
+            ) from exc
     if not discard:
         return
     result = run(["blkdiscard", "-f", dev], check=False, timeout=360.0)
