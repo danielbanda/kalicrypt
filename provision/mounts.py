@@ -46,7 +46,12 @@ def _root_lv_path(dm: DeviceMap) -> str:
     the mount helpers in sync with the probing logic.
     """
 
-    return f"/dev/mapper/{dm.vg}-{dm.lv}"
+    root_path = getattr(dm, "root_lv_path", None)
+    if root_path:
+        return root_path
+    if dm.vg and dm.lv:
+        return f"/dev/mapper/{dm.vg}-{dm.lv}"
+    raise SystemExit("unable to determine root logical volume path from device map")
 
 
 def mount_targets(device: str, dry_run: bool=False, destructive: bool=True) -> Mounts:
@@ -64,7 +69,8 @@ def mount_targets(device: str, dry_run: bool=False, destructive: bool=True) -> M
     # active yet.  Ensure the volume group is brought online before mounting
     # anything from it.  ``vgchange -ay`` is safe to run even if the devices
     # are already active and matches the documented manual verification flow.
-    run(["vgchange", "-ay", dm.vg], check=True)
+    if dm.vg:
+        run(["vgchange", "-ay", dm.vg], check=True)
     udev_settle()
     # mount (ro when non-destructive)
     ro_opts = ["ro"] if not destructive else None

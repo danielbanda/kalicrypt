@@ -53,6 +53,47 @@ def probe(device: str, dry_run: bool=False, read_only: bool | None = None) -> De
     # returns an arbitrary order.
     parts.sort(key=lambda c: c.get("name", ""))
 
+    # Capture any logical volumes reported under the third partition so that we
+    # can discover custom volume group or logical volume names when verifying
+    # an existing installation.
+    detected_vg = "rp5vg"
+    detected_lv = "root"
+    detected_root_mapper = None
+    if len(parts) >= 3:
+        lvm_children = parts[2].get("children") or []
+        for child in lvm_children:
+            if child.get("type") != "lvm":
+                continue
+            mapper = child.get("path") or child.get("name") or ""
+            if mapper and not mapper.startswith("/"):
+                mapper = f"/dev/{mapper}"
+            detected_root_mapper = mapper or detected_root_mapper
+            name = child.get("name") or ""
+            if name:
+                # ``lsblk`` reports device-mapper names with the ``vg-lv``
+                # format.  Volume group and logical volume identifiers encode
+                # literal dashes as double dashes, so walk the string to locate
+                # the separator that is not part of an escape sequence.
+                sep = None
+                idx = 0
+                while idx < len(name):
+                    if name[idx] != "-":
+                        idx += 1
+                        continue
+                    if idx + 1 < len(name) and name[idx + 1] == "-":
+                        idx += 2
+                        continue
+                    sep = idx
+                    break
+                if sep is not None:
+                    vg_encoded = name[:sep]
+                    lv_encoded = name[sep + 1:]
+                    if vg_encoded:
+                        detected_vg = vg_encoded.replace("--", "-")
+                    if lv_encoded:
+                        detected_lv = lv_encoded.replace("--", "-")
+            if detected_root_mapper:
+                break
 
     # Devices such as NVMe and MMC require a ``p`` separator before the
     # partition index (``nvme0n1p1``), while others like ``sda`` do not.
@@ -87,9 +128,27 @@ def probe(device: str, dry_run: bool=False, read_only: bool | None = None) -> De
 
     p1, p2, p3 = resolved
 
-    trace("devices.probe", device=device, p1=p1, p2=p2, p3=p3, dry_run=dry_run)
+    trace(
+        "devices.probe",
+        device=device,
+        p1=p1,
+        p2=p2,
+        p3=p3,
+        vg=detected_vg,
+        lv=detected_lv,
+        root_lv_path=detected_root_mapper,
+        dry_run=dry_run,
+    )
 
-    return DeviceMap(device=device, p1=p1, p2=p2, p3=p3)
+    return DeviceMap(
+        device=device,
+        p1=p1,
+        p2=p2,
+        p3=p3,
+        vg=detected_vg,
+        lv=detected_lv,
+        root_lv_path=detected_root_mapper,
+    )
 
 def swapoff_all(dry_run: bool=False):
     run(["swapoff","-a"], check=False, dry_run=dry_run)
