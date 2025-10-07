@@ -27,25 +27,50 @@ def write_crypttab(mnt: str, luks_uuid: str, passfile: str|None, keyscript_path:
         except Exception:
             pass
 
-def write_cmdline(dst_boot_fw: str, luks_uuid: str):
-    p = os.path.join(dst_boot_fw,'cmdline.txt')
-    cmd = f"console=serial0,115200 console=tty1 root=/dev/mapper/rp5vg-root rootfstype=ext4 fsck.repair=yes rootwait cryptdevice=UUID={luks_uuid}:cryptroot"
+def _resolve_root_mapper(root_mapper: str | None, vg: str | None, lv: str | None) -> str:
+    if root_mapper and root_mapper.strip():
+        return root_mapper.strip()
+    vg_name = (vg or 'rp5vg').strip() or 'rp5vg'
+    lv_name = (lv or 'root').strip() or 'root'
+    return f"/dev/mapper/{vg_name}-{lv_name}"
+
+
+def write_cmdline(
+    dst_boot_fw: str,
+    luks_uuid: str,
+    root_mapper: str | None = None,
+    vg: str | None = None,
+    lv: str | None = None,
+):
+    p = os.path.join(dst_boot_fw, 'cmdline.txt')
+    mapper_path = _resolve_root_mapper(root_mapper, vg, lv)
+    cmd = (
+        f"cryptdevice=UUID={luks_uuid}:cryptroot "
+        f"root={mapper_path} "
+        "rootfstype=ext4 fsck.repair=yes rootwait "
+        "console=serial0,115200 console=tty1"
+    )
     if os.path.exists(p):
-        txt = open(p,'r',encoding='utf-8').read()
-        if 'cryptdevice=' in txt and 'root=/dev/mapper/rp5vg-root' in txt:
+        try:
+            txt = open(p, 'r', encoding='utf-8').read().strip()
+        except Exception:
+            txt = ''
+        if txt == cmd:
             return
-    with open(p,'w',encoding='utf-8') as f: f.write(cmd + "\n")
+    with open(p, 'w', encoding='utf-8') as f:
+        f.write(cmd + "\n")
 
 
-def assert_cmdline_uuid(dst_boot_fw: str, luks_uuid: str):
+def assert_cmdline_uuid(dst_boot_fw: str, luks_uuid: str, root_mapper: str | None = None):
     p = os.path.join(dst_boot_fw,'cmdline.txt')
     if not os.path.isfile(p):
         raise RuntimeError('cmdline.txt missing')
     txt = open(p,'r',encoding='utf-8').read()
     if f'cryptdevice=UUID={luks_uuid}' not in txt:
         raise RuntimeError('cmdline.txt cryptdevice UUID mismatch')
-    if 'root=/dev/mapper/rp5vg-root' not in txt:
-        raise RuntimeError('cmdline.txt missing root mapper rp5vg-root')
+    mapper_path = _resolve_root_mapper(root_mapper, None, None)
+    if mapper_path not in txt:
+        raise RuntimeError(f'cmdline.txt missing root mapper {mapper_path}')
 
 
 def assert_crypttab_uuid(mnt: str, luks_uuid: str):

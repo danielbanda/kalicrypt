@@ -163,12 +163,17 @@ def _plan_payload(plan: ProvisionPlan, flags: Flags, root_src: str) -> Dict[str,
     dm = probe(plan.device, dry_run=True)
     state: Dict[str, Any] = {"root_source": root_src}
     holders = _holders_snapshot(plan.device)
-    if holders:
-        state["holders"] = holders
+    state["holders"] = holders
     try:
         lsblk = run(["lsblk", "-o", "NAME,SIZE,TYPE,MOUNTPOINT", plan.device], check=False)
         if getattr(lsblk, "out", "").strip():
             state["lsblk"] = lsblk.out.strip()
+    except Exception:
+        pass
+    try:
+        lsblk_verbose = run(["lsblk", "-O", plan.device], check=False)
+        if getattr(lsblk_verbose, "out", "").strip():
+            state["lsblk_verbose"] = lsblk_verbose.out.strip()
     except Exception:
         pass
     state["same_underlying_disk"] = _same_underlying_disk(plan.device, root_src)
@@ -178,6 +183,12 @@ def _plan_payload(plan: ProvisionPlan, flags: Flags, root_src: str) -> Dict[str,
         "boot_mb": plan.boot_mb,
         "passphrase_file": plan.passphrase_file,
         "device_map": vars(dm),
+        "detected": {
+            "vg": dm.vg,
+            "lv": dm.lv,
+            "root_lv_path": dm.root_lv_path,
+            "root_mapper": dm.root_lv_path or f"/dev/mapper/{dm.vg}-{dm.lv}",
+        },
     }
     payload: Dict[str, Any] = {
         "mode": "plan" if flags.plan else ("dry-run" if flags.dry_run else "full"),
@@ -193,6 +204,29 @@ def _plan_payload(plan: ProvisionPlan, flags: Flags, root_src: str) -> Dict[str,
         "timestamp": int(time.time()),
     }
     return payload
+
+
+def _pre_sync_snapshot(max_mount_lines: int = 20) -> Dict[str, Any]:
+    snapshot: Dict[str, Any] = {}
+    try:
+        df_out = run(["df", "-h"], check=False)
+        if getattr(df_out, "out", "").strip():
+            snapshot["df_h"] = df_out.out.strip()
+    except Exception:
+        pass
+    try:
+        mount_cmd = f"mount | head -n {max(1, max_mount_lines)}"
+        mounts = run(["bash", "-lc", mount_cmd], check=False)
+        if getattr(mounts, "out", "").strip():
+            snapshot["mount_sample"] = mounts.out.strip()
+    except Exception:
+        pass
+    try:
+        with open("/etc/hostname", "r", encoding="utf-8") as fh:
+            snapshot["hostname"] = fh.read().strip()
+    except Exception:
+        pass
+    return snapshot
 
 
 def _rsync_meta(res: Any) -> Dict[str, Any]:
@@ -380,12 +414,20 @@ def _holders_snapshot(device: str) -> str:
         return ""
 
 
-def _require_passphrase(path: Optional[str]) -> str:
-    if not path or not os.path.isfile(path) or os.path.getsize(path) == 0:
-        _emit_result(
-            "FAIL_MISSING_PASSPHRASE",
-            extra={"hint": "--passphrase-file must reference a non-empty file"},
-        )
+def _require_passphrase(path: Optional[str], context: str = "default") -> str:
+    def _hint(reason: str) -> Dict[str, Any]:
+        base = "--passphrase-file must reference a non-empty file"
+        if context == "postcheck-only":
+            base = (
+                "--do-postcheck still needs a valid --passphrase-file so the LUKS volume "
+                "can be opened read-only"
+            )
+        return {"hint": base, "reason": reason}
+
+    if not path or not os.path.isfile(path):
+        _emit_result("FAIL_MISSING_PASSPHRASE", extra=_hint("missing"))
+    if os.path.getsize(path) == 0:
+        _emit_result("FAIL_MISSING_PASSPHRASE", extra=_hint("empty"))
     return os.path.abspath(path)
 
 
@@ -515,7 +557,7 @@ def main(argv: Optional[list[str]] = None) -> int:
         )
 
     if flags.do_postcheck and not flags.plan and not flags.dry_run:
-        passphrase_file = _require_passphrase(plan.passphrase_file)
+        passphrase_file = _require_passphrase(plan.passphrase_file, context="postcheck-only")
         _run_postcheck_only(plan, flags, passphrase_file)
 
     if flags.plan or flags.dry_run:
@@ -555,14 +597,18 @@ def main(argv: Optional[list[str]] = None) -> int:
     bind_mounts(mounts.mnt, read_only=False)
 
     rsync_meta: Dict[str, Any] = {"exit": 0, "err": None, "out": None, "warning": None}
+    pre_sync_snapshot: Dict[str, Any] = {}
     postcheck_report: Optional[Dict[str, Any]] = None
     cleanup_stats: Optional[Dict[str, Any]] = None
     heartbeat_meta: Optional[Dict[str, Any]] = None
     recovery_doc_path: Optional[str] = None
+    root_mapper_path: Optional[str] = None
+    initramfs_image: Optional[str] = None
     try:
         populate_esp(mounts.esp, preserve_cmdline=True, preserve_config=True, dry_run=False)
         assert_essentials(mounts.esp)
 
+        pre_sync_snapshot = _pre_sync_snapshot()
         rsync_result = rsync_root(mounts.mnt, dry_run=False, exclude_boot=True)
         rsync_meta = _rsync_meta(rsync_result)
 
@@ -575,16 +621,19 @@ def main(argv: Optional[list[str]] = None) -> int:
         write_fstab(mounts.mnt, p1_uuid, p2_uuid)
         write_crypttab(mounts.mnt, luks_uuid, passphrase_file, keyscript_path=None)
         assert_crypttab_uuid(mounts.mnt, luks_uuid)
-        write_cmdline(mounts.esp, luks_uuid)
-        assert_cmdline_uuid(mounts.esp, luks_uuid)
+        root_mapper_path = dm.root_lv_path or f"/dev/mapper/{dm.vg}-{dm.lv}"
+        write_cmdline(
+            mounts.esp,
+            luks_uuid,
+            root_mapper=root_mapper_path,
+            vg=dm.vg,
+            lv=dm.lv,
+        )
+        assert_cmdline_uuid(mounts.esp, luks_uuid, root_mapper=root_mapper_path)
 
         ensure_packages(mounts.mnt)
         rebuild(mounts.mnt)
-        if not verify_initramfs(mounts.esp):
-            _emit_result(
-                "FAIL_INITRAMFS_VERIFY",
-                extra={"hint": "initramfs verification failed; rebuild and re-check UUIDs"},
-            )
+        initramfs_image = verify_initramfs(mounts.esp)
 
         if flags.do_postcheck:
             try:
@@ -608,15 +657,12 @@ def main(argv: Optional[list[str]] = None) -> int:
             pass
         raise
 
-    unmount_all(mounts.mnt, boot=mounts.boot, esp=mounts.esp)
+    planned_steps = _planned_steps(flags)
 
     try:
-        close_luks(dm.luks_name)
-        deactivate_vg(dm.vg)
+        _log_mounts()
     except Exception:
         pass
-
-    planned_steps = _planned_steps(flags)
 
     result_payload = {
         "sync_performed": sync_performed,
@@ -628,12 +674,20 @@ def main(argv: Optional[list[str]] = None) -> int:
             "passphrase_file": plan.passphrase_file,
         },
         "uuids": {"p1": p1_uuid, "p2": p2_uuid, "luks": luks_uuid},
+        "detected": {
+            "vg": dm.vg,
+            "lv": dm.lv,
+            "root_lv_path": dm.root_lv_path,
+            "root_mapper": root_mapper_path,
+        },
+        "pre_sync": pre_sync_snapshot,
         "rsync": {
             "exit": rsync_meta.get("exit"),
             "warning": rsync_meta.get("warning"),
             "err": rsync_meta.get("err"),
             "summary": _rsync_summarize(rsync_meta.get("out") or ""),
         },
+        "initramfs": {"image": initramfs_image},
         "postcheck": {
             "requested": flags.do_postcheck,
             "heartbeat": heartbeat_meta,
@@ -646,6 +700,22 @@ def main(argv: Optional[list[str]] = None) -> int:
     preboot_payload = dict(result_payload)
     preboot_payload["phase"] = "preboot"
     _record_result("ETE_PREBOOT_OK", preboot_payload)
+
+    try:
+        unmount_all(mounts.mnt, boot=mounts.boot, esp=mounts.esp)
+    except Exception:
+        pass
+
+    try:
+        close_luks(dm.luks_name)
+        deactivate_vg(dm.vg)
+    except Exception:
+        pass
+
+    try:
+        _log_mounts()
+    except Exception:
+        pass
 
     final_payload = dict(result_payload)
     final_payload["phase"] = "completed"

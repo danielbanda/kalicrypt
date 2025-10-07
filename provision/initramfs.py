@@ -11,7 +11,7 @@ def ensure_packages(mnt: str, dry_run: bool=False):
 def rebuild(mnt: str, dry_run: bool=False):
     run(["chroot", mnt, "/usr/sbin/update-initramfs", "-u"], check=False, dry_run=dry_run)
 
-def verify(dst_boot_fw: str):
+def verify(dst_boot_fw: str) -> str:
     cfg = os.path.join(dst_boot_fw, 'config.txt')
     if not os.path.exists(cfg):
         # write a safe default that references the newest initrd
@@ -28,6 +28,7 @@ def verify(dst_boot_fw: str):
     out = subprocess.check_output(["lsinitramfs", ir], text=True)
     if "cryptsetup" not in out or "lvm" not in out:
         raise RuntimeError("initramfs: missing cryptsetup or lvm in image")
+    return ir
 
 def newest_initrd(dst_boot_fw: str) -> str:
     cands = sorted([p for p in os.listdir(dst_boot_fw) if p.startswith('initramfs')], reverse=True)
