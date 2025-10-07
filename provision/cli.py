@@ -242,7 +242,7 @@ def _pre_sync_snapshot(max_mount_lines: int = 20) -> Dict[str, Any]:
         mount_cmd = f"mount | head -n {max(1, max_mount_lines)}"
         mounts = run(["bash", "-lc", mount_cmd], check=False)
         if getattr(mounts, "out", "").strip():
-            snapshot["mount_sample"] = mounts.out.strip()
+            snapshot["mount_sample"] = mounts.out.strip().splitlines()
     except Exception:
         pass
     try:
