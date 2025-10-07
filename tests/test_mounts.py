@@ -43,6 +43,42 @@ def test_mount_targets_formats_and_mounts(monkeypatch):
     assert ["mount", "-o", "umask=0077", "/dev/p1", "/mnt/nvme/boot/firmware"] in commands
 
 
+def test_mount_targets_read_only_mode_guards(monkeypatch):
+    commands: list[list[str]] = []
+
+    def fake_run(cmd, check=True, **_kwargs):  # noqa: ARG001 - signature compatibility
+        commands.append(cmd)
+        return DummyResult("")
+
+    monkeypatch.setattr(mounts, "run", fake_run)
+    monkeypatch.setattr(mounts, "udev_settle", lambda: None)
+
+    def fake_blkid(dev):
+        mapping = {
+            "/dev/p1": "vfat",
+            "/dev/p2": "ext4",
+            "/dev/mapper/rp5vg-root": "ext4",
+        }
+        return mapping.get(dev, "")
+
+    monkeypatch.setattr(mounts, "_blkid", fake_blkid)
+    monkeypatch.setattr(
+        mounts,
+        "probe",
+        lambda device, dry_run=False: SimpleNamespace(p1="/dev/p1", p2="/dev/p2", p3="/dev/p3"),
+    )
+
+    mounts.mount_targets("/dev/nvme0n1", destructive=False)
+
+    mkfs_calls = [
+        cmd for cmd in commands if cmd and cmd[0] in {"mkfs.vfat", "mkfs.ext4"}
+    ]
+    assert not mkfs_calls
+
+    mount_calls = [cmd for cmd in commands if cmd and cmd[0] == "mount"]
+    assert mount_calls
+
+
 def test_bind_mounts_respects_dry_run(monkeypatch):
     calls: list[tuple[list[str], bool]] = []
 
