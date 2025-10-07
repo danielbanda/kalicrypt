@@ -2,8 +2,20 @@
 from .model import DeviceMap
 from .executil import run, udev_settle
 
-def probe(device: str, dry_run: bool=False) -> DeviceMap:
-    return DeviceMap(device=device, p1=f"{device}p1", p2=f"{device}p2", p3=f"{device}p3")
+def probe(device: str, dry_run: bool=False, read_only: bool | None = None) -> DeviceMap:
+    """Probe the target disk layout.
+
+    Historically this helper accepted a ``read_only`` flag.  Older call sites
+    in the provisioning workflow may still use that keyword, so accept it as an
+    alias for ``dry_run`` to remain backwards compatible with those entry
+    points.  The probing logic is read-only by nature, so the value does not
+    currently influence behaviour, but keeping the parameter prevents runtime
+    ``TypeError`` crashes when invoking the CLI with versions that still pass
+    ``read_only``.
+    """
+
+    if read_only is not None:
+        dry_run = read_only
 
 def swapoff_all(dry_run: bool=False):
     run(["swapoff","-a"], check=False, dry_run=dry_run)
