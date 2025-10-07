@@ -59,11 +59,20 @@ def probe(device: str, dry_run: bool=False, read_only: bool | None = None) -> De
     detected_vg = "rp5vg"
     detected_lv = "root"
     detected_root_mapper = None
+
+    def _walk_children(node: dict) -> list[dict]:
+        return list(node.get("children") or [])
+
+    def _iter_lvm_nodes(node: dict):
+        stack = _walk_children(node)
+        while stack:
+            child = stack.pop()
+            if child.get("type") == "lvm":
+                yield child
+            stack.extend(_walk_children(child))
+
     if len(parts) >= 3:
-        lvm_children = parts[2].get("children") or []
-        for child in lvm_children:
-            if child.get("type") != "lvm":
-                continue
+        for child in _iter_lvm_nodes(parts[2]):
             mapper = child.get("path") or child.get("name") or ""
             if mapper and not mapper.startswith("/"):
                 mapper = f"/dev/{mapper}"
