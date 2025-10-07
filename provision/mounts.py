@@ -88,7 +88,7 @@ def _activate_vg(dm: DeviceMap):
             _do_activate()
         except CalledProcessError as retry_exc:
             msg = retry_exc.stderr or retry_exc.stdout or str(retry_exc)
-            raise SystemExit(
+            raise RuntimeError(
                 f"failed to activate volume group {dm.vg!r}: {msg.strip()}"
             ) from retry_exc
 
