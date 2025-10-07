@@ -59,6 +59,7 @@ def _ensure_fs(dev: str, fstype: str, label: str = None):
     expectation is not met.
     """
 
+    _wait_for_block(dev)
     cur = _blkid(dev)
     if cur == fstype:
         return
