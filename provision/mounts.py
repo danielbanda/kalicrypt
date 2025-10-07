@@ -34,7 +34,10 @@ def _blkid(path: str) -> str:
         udev_settle()
     except Exception:
         pass
-    r = run(["blkid","-s","TYPE","-o","value", path], check=False)
+    r = run(["blkid","-s","TYPE","-o","value", path], check=False);
+val = (r.out or "").strip();
+\n    if not val:
+\n        r2 = run(["lsblk","-no","FSTYPE", path], check=False); r.out = r2.out
     val = (r.out or "").strip()
     if not val:
         r2 = run(["lsblk","-no","FSTYPE", path], check=False)
@@ -50,6 +53,12 @@ def _blkid(path: str) -> str:
 
 
 def _ensure_fs(dev: str, fstype: str, label: str = None):
+    from subprocess import CalledProcessError
+    s = __import__("subprocess").run(["findmnt","-no","TARGET", dev], capture_output=True, text=True)
+    if s.stdout.strip():
+        return
+    try: __import__("subprocess").run(["udevadm","settle"], check=False)
+    except Exception: pass
     """Ensure the target block device has the expected filesystem.
 
     When ``destructive`` is ``False`` the helper acts as a guard instead of
