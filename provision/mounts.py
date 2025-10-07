@@ -34,6 +34,40 @@ def _device_name(dev: str) -> str:
     return os.path.basename(_device_realpath(dev))
 
 
+def _read_int(path: str) -> int | None:
+    try:
+        with open(path, "r", encoding="utf-8") as fh:
+            text = fh.read().strip()
+    except FileNotFoundError:
+        return None
+    except OSError as exc:  # noqa: PERF203 - capture unexpected sysfs errors
+        trace("mounts.sysfs_read_error", path=path, error=str(exc))
+        return None
+    if not text:
+        return None
+    try:
+        return int(text)
+    except ValueError:
+        trace("mounts.sysfs_parse_error", path=path, raw=text)
+        return None
+
+
+def _device_discard_capabilities(dev: str) -> dict:
+    name = _device_name(dev)
+    queue_dir = os.path.join("/sys/class/block", name, "queue")
+    max_bytes = _read_int(os.path.join(queue_dir, "discard_max_bytes"))
+    granularity = _read_int(os.path.join(queue_dir, "discard_granularity"))
+    zeroes = _read_int(os.path.join(queue_dir, "discard_zeroes_data"))
+    capabilities: dict[str, int | bool | None] = {
+        "discard_max_bytes": max_bytes,
+        "discard_granularity": granularity,
+    }
+    if zeroes is not None:
+        capabilities["discard_zeroes_data"] = bool(zeroes)
+    capabilities["supports_discard"] = bool(max_bytes and max_bytes > 0)
+    return capabilities
+
+
 def _device_ro(dev: str) -> bool:
     name = _device_name(dev)
     ro_path = os.path.join("/sys/class/block", name, "ro")
@@ -118,6 +152,9 @@ def _collect_device_state(dev: str) -> dict:
         "mountpoints": _device_mountpoints(dev),
         "holders": _device_holders(dev),
     }
+    discard = _device_discard_capabilities(dev)
+    if discard:
+        state["discard_capabilities"] = discard
     open_count = _dmsetup_open_count(dev)
     if open_count is not None:
         state["dmsetup_open_count"] = open_count
@@ -141,9 +178,41 @@ def _preflight_errors(state: dict) -> list[str]:
     return errors
 
 
-def _wipe_device(dev: str, *, discard: bool = True) -> None:
+def _dd_zero_first_megabytes(dev: str, count: int = 8) -> dict:
+    args = [
+        "dd",
+        "if=/dev/zero",
+        f"of={dev}",
+        "bs=1M",
+        f"count={count}",
+        "conv=fsync",
+    ]
+    result = run(args, check=False, timeout=max(120.0, count * 2.0))
+    info = {
+        "args": args,
+        "rc": result.rc,
+        "stdout": (result.out or "").strip(),
+        "stderr": (result.err or "").strip(),
+    }
+    trace(
+        "mounts.dd_zero", device=dev, rc=result.rc, stderr=info["stderr"], stdout=info["stdout"]
+    )
+    return info
+
+
+def _wipe_device(dev: str, *, discard: bool = True) -> dict:
+    wipe_info: dict[str, object] = {
+        "discard_capabilities": _device_discard_capabilities(dev),
+    }
+
     def _run_wipefs(*extra_args: str) -> None:
-        run(["wipefs", "-a", *extra_args, dev], check=True, timeout=120.0)
+        result = run(["wipefs", "-a", *extra_args, dev], check=True, timeout=120.0)
+        wipe_info["wipefs"] = {
+            "args": ["wipefs", "-a", *extra_args, dev],
+            "rc": result.rc,
+            "stdout": (result.out or "").strip(),
+            "stderr": (result.err or "").strip(),
+        }
 
     try:
         _run_wipefs()
@@ -173,20 +242,89 @@ def _wipe_device(dev: str, *, discard: bool = True) -> None:
                 state=_collect_device_state(dev),
             ) from exc
     if not discard:
-        return
-    result = run(["blkdiscard", "-f", dev], check=False, timeout=360.0)
-    if result.rc != 0:
-        trace(
-            "mounts.blkdiscard_failed",
-            device=dev,
-            rc=result.rc,
-            stderr=(result.err or "").strip(),
-            stdout=(result.out or "").strip(),
-        )
+        return wipe_info
+
+    capabilities = wipe_info.get("discard_capabilities") or {}
+    supports_discard = bool(capabilities.get("supports_discard"))
+    discard_args = ["blkdiscard", "-fv", dev]
+    if supports_discard:
+        result = run(discard_args, check=False, timeout=360.0)
+        discard_info = {
+            "args": discard_args,
+            "rc": result.rc,
+            "stdout": (result.out or "").strip(),
+            "stderr": (result.err or "").strip(),
+        }
+        wipe_info["blkdiscard"] = discard_info
+        if result.rc != 0:
+            trace(
+                "mounts.blkdiscard_failed",
+                device=dev,
+                rc=result.rc,
+                stderr=discard_info["stderr"],
+                stdout=discard_info["stdout"],
+            )
+            dd_info = _dd_zero_first_megabytes(dev)
+            wipe_info["dd_zero"] = dd_info
+            if dd_info["rc"] != 0:
+                state = {**_collect_device_state(dev), "wipe": wipe_info}
+                detail = dd_info.get("stderr") or dd_info.get("stdout") or f"rc {dd_info['rc']}"
+                raise MkfsError(
+                    f"zeroing {dev} failed: {detail}",
+                    state=state,
+                )
+    else:
+        trace("mounts.discard_unsupported", device=dev, capabilities=capabilities)
+        dd_info = _dd_zero_first_megabytes(dev)
+        wipe_info["dd_zero"] = dd_info
+        if dd_info["rc"] != 0:
+            state = {**_collect_device_state(dev), "wipe": wipe_info}
+            detail = dd_info.get("stderr") or dd_info.get("stdout") or f"rc {dd_info['rc']}"
+            raise MkfsError(
+                f"zeroing {dev} failed: {detail}",
+                state=state,
+            )
+
+    return wipe_info
+
+
+def _dmesg_tail(lines: int = 120) -> list[str] | None:
+    try:
+        result = run(["dmesg", "-T"], check=False, timeout=10.0)
+    except FileNotFoundError:
+        trace("mounts.dmesg_missing")
+        return None
+    output = (result.out or "").splitlines()
+    if not output:
+        return []
+    return output[-lines:]
+
+
+def _lsblk_discard(dev: str) -> str | None:
+    try:
+        result = run(["lsblk", "-D", dev], check=False, timeout=10.0)
+    except FileNotFoundError:
+        trace("mounts.lsblk_missing")
+        return None
+    return (result.out or "").strip()
+
+
+def _dmsetup_table_snapshot(dev: str) -> dict | None:
+    try:
+        result = run(["dmsetup", "table", dev], check=False, timeout=10.0)
+    except FileNotFoundError:
+        trace("mounts.dmsetup_missing")
+        return {"error": "dmsetup not found"}
+    return {
+        "rc": result.rc,
+        "stdout": (result.out or "").strip(),
+        "stderr": (result.err or "").strip(),
+    }
 
 
 def _mkfs(dev: str, fstype: str, label: str | None):
     state = _collect_device_state(dev)
+    state["fstype"] = fstype
     errors = _preflight_errors(state)
     if errors:
         raise MkfsError(
@@ -194,11 +332,17 @@ def _mkfs(dev: str, fstype: str, label: str | None):
             state=state,
         )
 
-    _wipe_device(dev)
+    try:
+        wipe_info = _wipe_device(dev)
+    except MkfsError as exc:
+        exc_state = dict(exc.state or {})
+        exc_state.setdefault("fstype", fstype)
+        exc.state = exc_state
+        raise
 
     args = [f"mkfs.{fstype}"]
     if fstype == "ext4":
-        args += ["-F"]
+        args += ["-F", "-E", "lazy_journal_init=1"]
     if label:
         if fstype == "vfat":
             args += ["-n", label]
@@ -207,9 +351,16 @@ def _mkfs(dev: str, fstype: str, label: str | None):
 
     attempts: list[dict[str, str | int]] = []
     delay = 0.5
+    extra_variants: list[list[str]]
+    if fstype == "ext4":
+        extra_variants = [[], ["-O", "^metadata_csum_seed"]]
+    else:
+        extra_variants = [[]]
     for attempt in range(3):
+        extra = extra_variants[min(attempt, len(extra_variants) - 1)]
+        cmd = args + extra + [dev]
         try:
-            run(args + [dev], check=True, timeout=360.0)
+            run(cmd, check=True, timeout=360.0)
             trace("mounts.mkfs_success", device=dev, fstype=fstype, attempts=attempt + 1)
             return
         except CalledProcessError as exc:
@@ -219,6 +370,7 @@ def _mkfs(dev: str, fstype: str, label: str | None):
                 "stderr": (exc.stderr or "").strip(),
                 "stdout": (exc.stdout or "").strip(),
                 "message": msg,
+                "args": cmd,
             })
             trace(
                 "mounts.mkfs_retry",
@@ -240,6 +392,12 @@ def _mkfs(dev: str, fstype: str, label: str | None):
             **_collect_device_state(dev),
             "mkfs_attempts": attempts,
             "fstype": fstype,
+            "wipe": wipe_info,
+            "diagnostics": {
+                "dmesg_tail": _dmesg_tail(),
+                "lsblk_discard": _lsblk_discard(dev),
+                "dmsetup_table": _dmsetup_table_snapshot(dev),
+            },
         },
     )
 

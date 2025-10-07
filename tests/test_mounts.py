@@ -75,7 +75,21 @@ def test_mkfs_raises_mkfs_error(monkeypatch):
         raise AssertionError(f"unexpected command {cmd}")
 
     monkeypatch.setattr(mounts, "run", fake_run)
-    monkeypatch.setattr(mounts, "_collect_device_state", lambda dev: {"device": dev, "mountpoints": [], "holders": [], "read_only": False})
+    monkeypatch.setattr(
+        mounts,
+        "_collect_device_state",
+        lambda dev: {
+            "device": dev,
+            "mountpoints": [],
+            "holders": [],
+            "read_only": False,
+            "discard_capabilities": {"supports_discard": True},
+        },
+    )
+    monkeypatch.setattr(mounts, "_device_discard_capabilities", lambda dev: {"supports_discard": True})
+    monkeypatch.setattr(mounts, "_dmesg_tail", lambda lines=120: ["tail"])  # noqa: ARG005
+    monkeypatch.setattr(mounts, "_lsblk_discard", lambda dev: "lsblk")
+    monkeypatch.setattr(mounts, "_dmsetup_table_snapshot", lambda dev: {"rc": 0, "stdout": "", "stderr": ""})
     monkeypatch.setattr(mounts, "udev_settle", lambda: None)
     monkeypatch.setattr(mounts.time, "sleep", lambda *_: None)
 
@@ -85,6 +99,36 @@ def test_mkfs_raises_mkfs_error(monkeypatch):
     assert "mkfs.ext4 failed on /dev/mapper/root: boom" in str(excinfo.value)
     assert excinfo.value.state["mkfs_attempts"]
     assert calls[0][:2] == ["wipefs", "-a"]
+    assert excinfo.value.state["wipe"]["blkdiscard"]["rc"] == 0
+
+
+def test_wipe_device_uses_dd_fallback(monkeypatch):
+    commands: list[list[str]] = []
+
+    class DummyResult:
+        def __init__(self, rc: int = 0, out: str = "", err: str = "") -> None:
+            self.rc = rc
+            self.out = out
+            self.err = err
+
+    def fake_run(cmd, check=True, timeout=0.0, **_kwargs):  # noqa: ARG001
+        commands.append(cmd)
+        if cmd[0] == "wipefs":
+            return DummyResult()
+        if cmd[0] == "blkdiscard":
+            return DummyResult(rc=1, err="unsupported")
+        if cmd[0] == "dd":
+            return DummyResult()
+        raise AssertionError(f"unexpected command {cmd}")
+
+    monkeypatch.setattr(mounts, "run", fake_run)
+    monkeypatch.setattr(mounts, "_collect_device_state", lambda dev: {"device": dev})
+    monkeypatch.setattr(mounts, "_device_discard_capabilities", lambda dev: {"supports_discard": True})
+
+    info = mounts._wipe_device("/dev/mapper/root")
+
+    assert any(cmd[0] == "dd" for cmd in commands)
+    assert info["dd_zero"]["rc"] == 0
 
 
 def test_mkfs_preflight_blocks_busy_device(monkeypatch):
