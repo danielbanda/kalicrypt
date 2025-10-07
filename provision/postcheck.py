@@ -1,5 +1,5 @@
 from __future__ import annotations
-import os, re, json
+import os, re, json, glob
 
 def _read(path: str) -> str:
     try:
@@ -77,7 +77,8 @@ def run_postcheck(mnt: str, luks_uuid: str, p1_uuid: str|None=None, verbose: boo
     res["checks"].append({"cmdline": True})
 
     # 3) initramfs and kernel images present
-    bootdir = os.path.join(mnt, "boot")
+    bootdir = sorted(glob.glob(os.path.join(mnt))) # temp fix
+    # bootdir = os.path.join(mnt, "boot")
     _require(bootdir)
     has_initramfs = any(name.startswith("initrd") or name.endswith(".img") for name in os.listdir(bootdir))
     if not has_initramfs:
