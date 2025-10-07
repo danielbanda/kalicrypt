@@ -1,5 +1,6 @@
 """Mount helpers (Phase 5.1)."""
 from subprocess import CalledProcessError
+import os
 
 from .model import Mounts, DeviceMap
 from .executil import run, udev_settle, trace
@@ -56,6 +57,22 @@ def _root_lv_path(dm: DeviceMap) -> str:
     raise SystemExit("unable to determine root logical volume path from device map")
 
 
+def _root_lv_exists(dm: DeviceMap) -> bool:
+    """Return ``True`` when the root logical volume path is available.
+
+    When verifying an existing installation the logical volume may already be
+    active before the provisioning helpers get a chance to run ``vgchange``.
+    ``lsblk`` provides the mapper path in that situation, so prefer the
+    explicit ``root_lv_path`` attribute from the device map when present and
+    fall back to deriving the path from the volume group and logical volume
+    names.  Any ``SystemExit`` raised by :func:`_root_lv_path` bubbles up so
+    callers can handle missing metadata consistently.
+    """
+
+    root_path = dm.root_lv_path or _root_lv_path(dm)
+    return bool(root_path) and os.path.exists(root_path)
+
+
 def _activate_vg(dm: DeviceMap):
     """Ensure the volume group backing ``dm`` is active.
 
@@ -72,6 +89,8 @@ def _activate_vg(dm: DeviceMap):
         run(["vgchange", "-ay", dm.vg], check=True)
 
     try:
+        if _root_lv_exists(dm):
+            return
         _do_activate()
     except CalledProcessError as exc:
         if exc.returncode != 5:
@@ -85,8 +104,12 @@ def _activate_vg(dm: DeviceMap):
         run(["pvscan", "--cache"], check=False)
         run(["vgscan", "--cache"], check=False)
         try:
+            if _root_lv_exists(dm):
+                return
             _do_activate()
         except CalledProcessError as retry_exc:
+            if _root_lv_exists(dm):
+                return
             msg = retry_exc.stderr or retry_exc.stdout or str(retry_exc)
             raise RuntimeError(
                 f"failed to activate volume group {dm.vg!r}: {msg.strip()}"
