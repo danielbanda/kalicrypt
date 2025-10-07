@@ -634,6 +634,9 @@ def main(argv: Optional[list[str]] = None) -> int:
 
     format_luks(dm.p3, passphrase_file)
     open_luks(dm.p3, dm.luks_name, passphrase_file)
+    run(["vgchange","-ay", dm.vg], check=False)
+    run(["dmsetup","mknodes"], check=False)
+    udev_settle()
     make_vg_lv(dm.vg, dm.lv)
 
     mounts = mount_targets(dm.device, dry_run=False)
