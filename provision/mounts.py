@@ -19,7 +19,7 @@ def _mkfs(dev: str, fstype: str, label: str | None):
             args += ["-n", label]
         else:
             args += ["-L", label]
-    run(args + [dev], check=True, timeout=120.0)
+    run(args + [dev], check=True, timeout=360.0)
 
 def _ensure_fs(dev: str, fstype: str, label: str | None=None):
     cur = _blkid_type(dev)
