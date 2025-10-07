@@ -1,5 +1,6 @@
 """Mount helpers (Phase 5.1)."""
 from subprocess import CalledProcessError
+import contextlib
 import os
 import stat
 import time
@@ -8,11 +9,168 @@ from .model import Mounts, DeviceMap
 from .executil import run, udev_settle, trace
 from .devices import probe
 
+
+class MkfsError(RuntimeError):
+    """Raised when destructive formatting fails or is unsafe."""
+
+    def __init__(self, message: str, *, state: dict | None = None) -> None:
+        super().__init__(message)
+        self.state = state or {}
+
+
 def _blkid_type(path: str) -> str:
-    r = run(["blkid","-s","TYPE","-o","value", path], check=False)
+    r = run(["blkid", "-s", "TYPE", "-o", "value", path], check=False)
     return (r.out or "").strip()
 
+
+def _device_realpath(dev: str) -> str:
+    try:
+        return os.path.realpath(dev)
+    except OSError:
+        return dev
+
+
+def _device_name(dev: str) -> str:
+    return os.path.basename(_device_realpath(dev))
+
+
+def _device_ro(dev: str) -> bool:
+    name = _device_name(dev)
+    ro_path = os.path.join("/sys/class/block", name, "ro")
+    try:
+        with open(ro_path, "r", encoding="utf-8") as fh:
+            return fh.read().strip() == "1"
+    except FileNotFoundError:
+        return False
+    except OSError as exc:  # noqa: PERF203 - trace unexpected sysfs failures
+        trace("mounts.preflight.ro_error", device=dev, path=ro_path, error=str(exc))
+        return False
+
+
+def _device_mountpoints(dev: str) -> list[str]:
+    mountpoints: list[str] = []
+    real = _device_realpath(dev)
+    try:
+        with open("/proc/self/mountinfo", "r", encoding="utf-8") as fh:
+            for line in fh:
+                parts = line.strip().split()
+                if not parts:
+                    continue
+                with contextlib.suppress(ValueError):
+                    dash = parts.index("-")
+                    source_idx = dash + 2
+                    if source_idx >= len(parts):
+                        continue
+                    source = parts[source_idx]
+                    if not source:
+                        continue
+                    try:
+                        src_real = os.path.realpath(source)
+                    except OSError:
+                        src_real = source
+                    if src_real == real:
+                        mount_point = parts[4].replace("\\040", " ")
+                        mountpoints.append(mount_point)
+    except FileNotFoundError:
+        return []
+    except OSError as exc:  # noqa: PERF203 - ensure unexpected failures get surfaced via trace
+        trace("mounts.preflight.mountinfo_error", device=dev, error=str(exc))
+    return mountpoints
+
+
+def _device_holders(dev: str) -> list[str]:
+    name = _device_name(dev)
+    holders_dir = os.path.join("/sys/class/block", name, "holders")
+    try:
+        return sorted(os.listdir(holders_dir))
+    except FileNotFoundError:
+        return []
+    except OSError as exc:  # noqa: PERF203 - diagnostic trace
+        trace("mounts.preflight.holders_error", device=dev, path=holders_dir, error=str(exc))
+        return []
+
+
+def _dmsetup_open_count(dev: str) -> int | None:
+    candidates = [_device_realpath(dev), _device_name(dev)]
+    for candidate in candidates:
+        if not candidate:
+            continue
+        try:
+            result = run(["dmsetup", "info", "-c", "--noheadings", "-o", "open", candidate], check=False)
+        except FileNotFoundError:
+            trace("mounts.preflight.dmsetup_missing")
+            return None
+        if result.rc == 0 and result.out:
+            text = result.out.strip().splitlines()[-1]
+            try:
+                return int(text)
+            except ValueError:
+                trace("mounts.preflight.dmsetup_parse_error", device=dev, raw=text)
+                return None
+    return None
+
+
+def _collect_device_state(dev: str) -> dict:
+    state = {
+        "device": dev,
+        "realpath": _device_realpath(dev),
+        "read_only": _device_ro(dev),
+        "mountpoints": _device_mountpoints(dev),
+        "holders": _device_holders(dev),
+    }
+    open_count = _dmsetup_open_count(dev)
+    if open_count is not None:
+        state["dmsetup_open_count"] = open_count
+    return state
+
+
+def _preflight_errors(state: dict) -> list[str]:
+    errors: list[str] = []
+    if state.get("read_only"):
+        errors.append("device is read-only")
+    mountpoints = state.get("mountpoints") or []
+    if mountpoints:
+        mounts = ", ".join(sorted(mountpoints))
+        errors.append(f"device is mounted at {mounts}")
+    holders = state.get("holders") or []
+    if holders:
+        errors.append(f"device has holders: {', '.join(holders)}")
+    open_count = state.get("dmsetup_open_count")
+    if isinstance(open_count, int) and open_count > 0:
+        errors.append(f"dmsetup open count is {open_count}")
+    return errors
+
+
+def _wipe_device(dev: str, *, discard: bool = True) -> None:
+    try:
+        run(["wipefs", "-a", dev], check=True, timeout=120.0)
+    except CalledProcessError as exc:
+        msg = (exc.stderr or exc.stdout or "").strip() or f"exit status {exc.returncode}"
+        raise MkfsError(f"wipefs failed on {dev}: {msg}", state=_collect_device_state(dev)) from exc
+    if not discard:
+        return
+    result = run(["blkdiscard", "-f", dev], check=False, timeout=360.0)
+    if result.rc != 0:
+        trace(
+            "mounts.blkdiscard_failed",
+            device=dev,
+            rc=result.rc,
+            stderr=(result.err or "").strip(),
+            stdout=(result.out or "").strip(),
+        )
+
+
 def _mkfs(dev: str, fstype: str, label: str | None):
+    state = _collect_device_state(dev)
+    errors = _preflight_errors(state)
+    if errors:
+        raise MkfsError(
+            f"refusing to format {dev}: " + "; ".join(errors),
+            state=state,
+        )
+
+    _wipe_device(dev)
+
     args = [f"mkfs.{fstype}"]
     if fstype == "ext4":
         args += ["-F"]
@@ -21,19 +179,44 @@ def _mkfs(dev: str, fstype: str, label: str | None):
             args += ["-n", label]
         else:
             args += ["-L", label]
-    try:
-        run(args + [dev], check=True, timeout=360.0)
-    except CalledProcessError as exc:
-        msg = (exc.stderr or exc.stdout or "").strip() or f"exit status {exc.returncode}"
-        trace(
-            "mounts.mkfs_error",
-            device=dev,
-            fstype=fstype,
-            rc=exc.returncode,
-            stderr=(exc.stderr or "").strip(),
-            stdout=(exc.stdout or "").strip(),
-        )
-        raise RuntimeError(f"mkfs.{fstype} failed on {dev}: {msg}") from exc
+
+    attempts: list[dict[str, str | int]] = []
+    delay = 0.5
+    for attempt in range(3):
+        try:
+            run(args + [dev], check=True, timeout=360.0)
+            trace("mounts.mkfs_success", device=dev, fstype=fstype, attempts=attempt + 1)
+            return
+        except CalledProcessError as exc:
+            msg = (exc.stderr or exc.stdout or "").strip() or f"exit status {exc.returncode}"
+            attempts.append({
+                "rc": exc.returncode,
+                "stderr": (exc.stderr or "").strip(),
+                "stdout": (exc.stdout or "").strip(),
+                "message": msg,
+            })
+            trace(
+                "mounts.mkfs_retry",
+                device=dev,
+                fstype=fstype,
+                attempt=attempt + 1,
+                rc=exc.returncode,
+                stderr=(exc.stderr or "").strip(),
+            )
+            if attempt == 2:
+                break
+            udev_settle()
+            time.sleep(delay)
+            delay = min(4.0, delay * 2)
+
+    raise MkfsError(
+        f"mkfs.{fstype} failed on {dev}: {attempts[-1]['message'] if attempts else 'unknown error'}",
+        state={
+            **_collect_device_state(dev),
+            "mkfs_attempts": attempts,
+            "fstype": fstype,
+        },
+    )
 
 def _ensure_fs(dev: str, fstype: str, label: str | None=None):
     _await_block_device(dev, timeout=15.0)

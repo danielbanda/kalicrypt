@@ -25,7 +25,7 @@ from .firmware import assert_essentials, populate_esp
 from .initramfs import ensure_packages, rebuild, verify as verify_initramfs
 from .luks_lvm import close_luks, deactivate_vg, format_luks, make_vg_lv, open_luks
 from .model import Flags, ProvisionPlan
-from .mounts import bind_mounts, mount_targets, unmount_all
+from .mounts import MkfsError, bind_mounts, mount_targets, unmount_all
 from .partitioning import apply_layout, verify_layout
 from .postcheck import cleanup_pycache, run_postcheck
 from .postboot import install_postboot_check as install_postboot_heartbeat
@@ -43,6 +43,7 @@ RESULT_CODES: Dict[str, int] = {
     "FAIL_PARTITIONING": 4,
     "FAIL_LUKS": 5,
     "FAIL_LVM": 6,
+    "FAIL_MKFS": 6,
     "FAIL_RSYNC": 7,
     "FAIL_POSTCHECK": 8,
     "FAIL_GENERIC": 9,
@@ -614,7 +615,13 @@ def main(argv: Optional[list[str]] = None) -> int:
     open_luks(dm.p3, dm.luks_name, passphrase_file)
     make_vg_lv(dm.vg, dm.lv)
 
-    mounts = mount_targets(dm.device, dry_run=False, destructive=True)
+    try:
+        mounts = mount_targets(dm.device, dry_run=False, destructive=True)
+    except MkfsError as exc:
+        extra = {"hint": str(exc)}
+        if getattr(exc, "state", None):
+            extra["device_state"] = exc.state
+        _emit_result("FAIL_MKFS", extra=extra)
     bind_mounts(mounts.mnt, read_only=False)
 
     rsync_meta: Dict[str, Any] = {"exit": 0, "err": None, "out": None, "warning": False, "note": None}
