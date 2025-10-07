@@ -190,7 +190,7 @@ def verify_triplet(
         raise RuntimeError("fstab missing root mapper line")
     result["fstab"] = {"path": fstab_path, "text": fstab_text}
 
-    initramfs_glob = os.path.join(esp_dir, "initramfs_*")
+    initramfs_glob = sorted(glob.glob(os.path.join(mnt_root, "boot", "firmware", "initramfs_*")))
     initramfs_matches = glob.glob(initramfs_glob)
     if not initramfs_matches:
         raise RuntimeError("initramfs image missing under ESP")
