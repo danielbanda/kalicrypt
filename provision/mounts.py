@@ -37,6 +37,18 @@ def _umount_all(paths: list[str]):
         run(["umount","-l", p], check=False)
     udev_settle()
 
+def _root_lv_path(dm: DeviceMap) -> str:
+    """Return the mapper path backing the root logical volume.
+
+    Historically the path was hard-coded throughout the provisioning
+    workflow.  Centralising the computation makes it easier to support
+    alternative volume group or logical volume names in the future and keeps
+    the mount helpers in sync with the probing logic.
+    """
+
+    return f"/dev/mapper/{dm.vg}-{dm.lv}"
+
+
 def mount_targets(device: str, dry_run: bool=False, destructive: bool=True) -> Mounts:
     dm: DeviceMap = probe(device, dry_run=dry_run)
     mnt = "/mnt/nvme"
@@ -47,10 +59,16 @@ def mount_targets(device: str, dry_run: bool=False, destructive: bool=True) -> M
     if destructive:
         _ensure_fs(dm.p1, "vfat", label="EFI")
         _ensure_fs(dm.p2, "ext4", label="boot")
-        _ensure_fs("/dev/mapper/rp5vg-root", "ext4", label="root")
+        _ensure_fs(_root_lv_path(dm), "ext4", label="root")
+    # When verifying an existing install, the root logical volume may not be
+    # active yet.  Ensure the volume group is brought online before mounting
+    # anything from it.  ``vgchange -ay`` is safe to run even if the devices
+    # are already active and matches the documented manual verification flow.
+    run(["vgchange", "-ay", dm.vg], check=True)
+    udev_settle()
     # mount (ro when non-destructive)
     ro_opts = ["ro"] if not destructive else None
-    _mount("/dev/mapper/rp5vg-root", mnt, fstype="ext4", opts=ro_opts)
+    _mount(_root_lv_path(dm), mnt, fstype="ext4", opts=ro_opts)
     _mount(dm.p2, boot, fstype="ext4", opts=ro_opts)
     #_mount(dm.p1, esp, fstype="vfat", opts=(ro_opts or ["umask=0077"]))  # keep umask on rw too
     # Keep the ESP permissions tight even on read-only verification mounts.
@@ -87,7 +105,7 @@ def unmount_all(mnt: str, boot: str | None = None, esp: str | None = None):
 
 def assert_mount_sources(dm: DeviceMap, mnt: str, boot: str, esp: str):
     # Compare actual mount backing devices vs expected from probe
-    root_exp = "/dev/mapper/rp5vg-root"
+    root_exp = _root_lv_path(dm)
     mnt_src = _findmnt_source(mnt)
     boot_src = _findmnt_source(boot)
     esp_src  = _findmnt_source(esp)
