@@ -52,7 +52,7 @@ def log(level: str, event: str, **fields):
     cur = LEVELS.get(LOG_LEVEL, 100)
     if lvl < cur:
         return
-    ts = _dt.datetime.utcnow().isoformat() + "Z"
+    ts = _dt.datetime.now(_dt.UTC).isoformat() + "Z"
     rec = {"ts": ts, "level": level.upper(), "event": event}
     rec.update(fields)
     _write_jsonl(rec)

@@ -59,7 +59,7 @@ sudo cryptsetup close cryptroot
 
 ## Canonical Module Invocation (package at project root)
 ```
-sudo python -m provision /dev/nvme0n1 --esp-mb 256 --boot-mb 512 --full-run --yes
+sudo python -m provision /dev/nvme0n1 --esp-mb 256 --boot-mb 512 --passphrase-file ~/secret.txt --yes
 ```
 
 

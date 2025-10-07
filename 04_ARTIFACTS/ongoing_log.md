@@ -1,7 +1,3 @@
-Here’s your document reformatted into **ongoing log format**, with mock dates and author metadata added per your logging structure:
-
----
-
 # 📘 `ongoing_log.md` — RP5 ETE Provisioning Log
 
 ---
@@ -86,7 +82,3 @@ Here’s your document reformatted into **ongoing log format**, with mock dates 
 * Aggressive cleanup prevents LUKS/VG holder issues
 * Mount order avoids hidden folders
 * Auto-update fallback in `ete_postcheck.sh` ensures bootable ESP
-
----
-
-Let me know if you want this in a file (`ongoing_log.md`) or want to add entries interactively going forward.

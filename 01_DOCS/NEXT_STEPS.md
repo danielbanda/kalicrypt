@@ -1,11 +1,4 @@
-# NEXT STEPS (Auto)
-
-1) Use `python3 provision/go.py doctor` and fix any FAIL before proceeding.
-2) Provide ISO/IMG input and NVMe device via env or config expected by offline builder; run `go.py ete`.
-3) Review logs in `03_LOGS/` and artifacts in `04_ARTIFACTS/`.
-4) Migrate remaining `.sh` tools to Python as needed (track in 99_META/ai_ingestion_notes.md).
-
-### ⬆️ 2025-10-07 Append · Boot Verification (Pre-Reboot Guard)
+### ⬆️ Boot Verification (Pre-Reboot Guard)
 
 Goal: Validate NVMe LUKS+LVM boot plumbing before reboot to avoid initramfs drops.
 
@@ -18,4 +11,4 @@ Checklist (non-destructive):
 6) Dry-run open/mount: `cryptsetup open`, `vgchange -ay`, mount `/dev/rp5vg/root`, list directories, then cleanly unmount/close.
 7) Invariants: cmdline must include `cryptdevice=UUID=...:cryptroot`, `root=/dev/mapper/rp5vg-root`, `rootwait`, and must NOT contain `PARTUUID=`.
 
-Automation: `python -m provision --nvme-verification ...` (new flag) runs all checks and emits `VERIFY_OK` with a JSON block under `verify`.
+Automation: `python -m provision ...` (new flag) runs all checks and emits `VERIFY_OK` with a JSON block under `verify`.
