@@ -53,10 +53,6 @@ def probe(device: str, dry_run: bool=False, read_only: bool | None = None) -> De
     # returns an arbitrary order.
     parts.sort(key=lambda c: c.get("name", ""))
 
-    if len(parts) < 3:
-        paths = [child.get("path") for child in parts]
-        raise SystemExit(f"expected at least three partitions on {device}, found: {paths}")
-
     p1 = parts[0].get("path") or f"{device}p1"
     p2 = parts[1].get("path") or f"{device}p2"
     p3 = parts[2].get("path") or f"{device}p3"
