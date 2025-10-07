@@ -636,7 +636,12 @@ def main(argv: Optional[list[str]] = None) -> int:
     open_luks(dm.p3, dm.luks_name, passphrase_file)
     run(["vgchange","-ay", dm.vg], check=False)
     run(["dmsetup","mknodes"], check=False)
-    udev_settle()
+    # Wait for /dev/mapper/rp5vg-root to appear
+    for _ in range(8):
+        if os.path.exists(f"/dev/mapper/{dm.vg}-{dm.lv}"):
+            break
+        time.sleep(0.25)
+        udev_settle()
     make_vg_lv(dm.vg, dm.lv)
 
     mounts = mount_targets(dm.device, dry_run=False)
