@@ -28,7 +28,8 @@ from .model import Flags, ProvisionPlan
 from .mounts import bind_mounts, mount_targets, unmount_all
 from .partitioning import apply_layout, verify_layout
 from .postcheck import cleanup_pycache, run_postcheck
-from .recovery import install_postboot_check, write_recovery_doc
+from .postboot import install_postboot_check as install_postboot_heartbeat
+from .recovery import write_recovery_doc
 from .root_sync import rsync_root
 
 RESULT_CODES: Dict[str, int] = {
@@ -115,6 +116,83 @@ def _log_mounts() -> None:
                 print("\n".join(lines))
     except Exception:
         pass
+
+
+def _record_result(kind: str, extra: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    payload: Dict[str, Any] = {"result": kind, "ts": int(time.time())}
+    if extra:
+        payload.update(extra)
+    append_jsonl(os.path.expanduser("~/rp5/03_LOGS/ete_nvme.jsonl"), payload)
+    print(json.dumps(payload, indent=2))
+    return payload
+
+
+def _planned_steps(flags: Flags) -> list[str]:
+    steps = [
+        "swapoff_all()",
+        "kill_holders(device)",
+        "apply_layout(device, esp_mb, boot_mb)",
+        "verify_layout(device)",
+        "format_luks(p3, passphrase_file)",
+        "open_luks(p3, luks_name, passphrase_file)",
+        "make_vg_lv(vg, lv)",
+        "mount_targets()/bind_mounts()",
+        "populate_esp()/assert_essentials()",
+    ]
+    if flags.skip_rsync:
+        steps.append("rsync_root(target, exclude_boot=True) [SKIPPED --skip-rsync]")
+    else:
+        steps.append("rsync_root(target, exclude_boot=True)")
+    steps.extend([
+        "write fstab/crypttab/cmdline + assert UUIDs",
+        "ensure_packages()/rebuild()/verify_initramfs()",
+    ])
+    if flags.do_postcheck:
+        steps.extend(
+            [
+                "install_postboot_heartbeat()/write_recovery_doc()",
+                "cleanup_pycache()/run_postcheck()",
+            ]
+        )
+    steps.append("unmount_all()/close_luks()/deactivate_vg()")
+    steps.append("emit RESULT codes (ETE_PREBOOT_OK -> ETE_DONE_OK)")
+    return steps
+
+
+def _plan_payload(plan: ProvisionPlan, flags: Flags, root_src: str) -> Dict[str, Any]:
+    dm = probe(plan.device, dry_run=True)
+    state: Dict[str, Any] = {"root_source": root_src}
+    holders = _holders_snapshot(plan.device)
+    if holders:
+        state["holders"] = holders
+    try:
+        lsblk = run(["lsblk", "-o", "NAME,SIZE,TYPE,MOUNTPOINT", plan.device], check=False)
+        if getattr(lsblk, "out", "").strip():
+            state["lsblk"] = lsblk.out.strip()
+    except Exception:
+        pass
+    state["same_underlying_disk"] = _same_underlying_disk(plan.device, root_src)
+    plan_block = {
+        "device": plan.device,
+        "esp_mb": plan.esp_mb,
+        "boot_mb": plan.boot_mb,
+        "passphrase_file": plan.passphrase_file,
+        "device_map": vars(dm),
+    }
+    payload: Dict[str, Any] = {
+        "mode": "plan" if flags.plan else ("dry-run" if flags.dry_run else "full"),
+        "plan": plan_block,
+        "flags": vars(flags),
+        "state": state,
+        "steps": _planned_steps(flags),
+        "rsync": {
+            "skip": flags.skip_rsync,
+            "exclude_boot": True,
+        },
+        "postcheck": {"requested": flags.do_postcheck},
+        "timestamp": int(time.time()),
+    }
+    return payload
 
 
 def _rsync_meta(res: Any) -> Dict[str, Any]:
@@ -324,7 +402,7 @@ def _run_postcheck_only(plan: ProvisionPlan, flags: Flags, passphrase_file: str)
         if not isinstance(luks_uuid, str) or len(luks_uuid.strip()) < 8:
             raise RuntimeError("could not determine LUKS UUID")
 
-        install_postboot_check(mounts.mnt)
+        heartbeat_meta = install_postboot_heartbeat(mounts.mnt)
         write_recovery_doc(mounts.mnt, luks_uuid)
 
         cleanup = cleanup_pycache(mounts.mnt)
@@ -348,7 +426,7 @@ def _run_postcheck_only(plan: ProvisionPlan, flags: Flags, passphrase_file: str)
                 "device": plan.device,
                 "luks_uuid": luks_uuid,
                 "installed": {
-                    "postboot_check": "/usr/local/sbin/rp5-postboot-check",
+                    "heartbeat": heartbeat_meta,
                     "recovery_doc": "/root/RP5_RECOVERY.md",
                 },
                 "cleanup": cleanup,
@@ -356,7 +434,7 @@ def _run_postcheck_only(plan: ProvisionPlan, flags: Flags, passphrase_file: str)
                 "steps": [
                     "open_luks(p3, cryptroot, passphrase_file)",
                     "mount_targets(device)/bind",
-                    "install_postboot_check",
+                    "install_postboot_heartbeat",
                     "write_recovery_doc",
                     "unmount_all",
                     "close_luks",
@@ -441,15 +519,12 @@ def main(argv: Optional[list[str]] = None) -> int:
         _run_postcheck_only(plan, flags, passphrase_file)
 
     if flags.plan or flags.dry_run:
-        plan_out = {
-            "device": plan.device,
-            "esp_mb": plan.esp_mb,
-            "boot_mb": plan.boot_mb,
-            "passphrase_file": plan.passphrase_file,
-        }
-        _write_json_artifact("plan", {"plan": plan_out, "flags": vars(flags)})
+        plan_payload = _plan_payload(plan, flags, root_src)
+        artifact_path = _write_json_artifact("plan", plan_payload)
         result_kind = "PLAN_OK" if flags.plan else "DRYRUN_OK"
-        _emit_result(result_kind, {"plan": plan_out, "flags": vars(flags)})
+        result_payload = dict(plan_payload)
+        result_payload["artifact"] = artifact_path
+        _emit_result(result_kind, result_payload)
 
     passphrase_file = _require_passphrase(plan.passphrase_file)
 
@@ -479,9 +554,11 @@ def main(argv: Optional[list[str]] = None) -> int:
     mounts = mount_targets(dm.device, dry_run=False, destructive=True)
     bind_mounts(mounts.mnt, read_only=False)
 
-    rsync_meta: Dict[str, Any] = {"exit": 0, "err": None, "out": None}
+    rsync_meta: Dict[str, Any] = {"exit": 0, "err": None, "out": None, "warning": None}
     postcheck_report: Optional[Dict[str, Any]] = None
     cleanup_stats: Optional[Dict[str, Any]] = None
+    heartbeat_meta: Optional[Dict[str, Any]] = None
+    recovery_doc_path: Optional[str] = None
     try:
         populate_esp(mounts.esp, preserve_cmdline=True, preserve_config=True, dry_run=False)
         assert_essentials(mounts.esp)
@@ -511,8 +588,9 @@ def main(argv: Optional[list[str]] = None) -> int:
 
         if flags.do_postcheck:
             try:
-                install_postboot_check(mounts.mnt)
+                heartbeat_meta = install_postboot_heartbeat(mounts.mnt)
                 write_recovery_doc(mounts.mnt, luks_uuid)
+                recovery_doc_path = os.path.join(mounts.mnt, "root", "RP5_RECOVERY.md")
                 cleanup_stats = cleanup_pycache(mounts.mnt)
                 postcheck_report = run_postcheck(mounts.mnt, luks_uuid, p1_uuid)
             except Exception as exc:  # noqa: BLE001
@@ -538,24 +616,9 @@ def main(argv: Optional[list[str]] = None) -> int:
     except Exception:
         pass
 
-    steps = [
-        "swapoff_all()",
-        "kill_holders(device)",
-        "apply_layout(device, esp_mb, boot_mb)",
-        "verify_layout(device)",
-        "format_luks(p3, passphrase_file)",
-        "open_luks(p3, luks_name, passphrase_file)",
-        "make_vg_lv(vg, lv)",
-        "mount_targets()/bind_mounts()",
-        "populate_esp()/assert_essentials()",
-        "rsync_root(target, exclude_boot=True)",
-        "write fstab/crypttab/cmdline + assert UUIDs",
-        "ensure_packages()/rebuild()/verify_initramfs()",
-        "unmount_all()",
-    ]
+    planned_steps = _planned_steps(flags)
 
     result_payload = {
-        "result": "ETE_PREBOOT_OK",
         "sync_performed": sync_performed,
         "flags": vars(flags),
         "plan": {
@@ -567,16 +630,26 @@ def main(argv: Optional[list[str]] = None) -> int:
         "uuids": {"p1": p1_uuid, "p2": p2_uuid, "luks": luks_uuid},
         "rsync": {
             "exit": rsync_meta.get("exit"),
+            "warning": rsync_meta.get("warning"),
             "err": rsync_meta.get("err"),
             "summary": _rsync_summarize(rsync_meta.get("out") or ""),
         },
         "postcheck": {
+            "requested": flags.do_postcheck,
+            "heartbeat": heartbeat_meta,
+            "recovery_doc": recovery_doc_path,
             "report": postcheck_report,
             "cleanup": cleanup_stats,
         },
-        "steps": steps,
+        "steps": planned_steps,
     }
-    _emit_result("ETE_PREBOOT_OK", result_payload)
+    preboot_payload = dict(result_payload)
+    preboot_payload["phase"] = "preboot"
+    _record_result("ETE_PREBOOT_OK", preboot_payload)
+
+    final_payload = dict(result_payload)
+    final_payload["phase"] = "completed"
+    _emit_result("ETE_DONE_OK", final_payload)
 
     return 0
 
