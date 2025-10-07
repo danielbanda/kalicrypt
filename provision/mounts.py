@@ -38,7 +38,7 @@ def _umount_all(paths: list[str]):
     udev_settle()
 
 def mount_targets(device: str, dry_run: bool=False, destructive: bool=True) -> Mounts:
-    dm: DeviceMap = probe(device, read_only=dry_run)
+    dm: DeviceMap = probe(device, dry_run=dry_run)
     mnt = "/mnt/nvme"
     boot = f"{mnt}/boot"
     esp = f"{boot}/firmware"

@@ -39,21 +39,39 @@ def _parse_rsync_stats(text: str) -> dict:
 EXCLUDES = ["/proc", "/sys", "/dev", "/run", "/mnt", "/media", "/tmp"]
 
 def rsync_root(dst_mnt: str, dry_run: bool=False, timeout_sec: int = 7200, exclude_boot: bool = False):
-    if shutil.which("rsync"):
-        base = ["rsync","-aHAXx","--numeric-ids","--delete-after","--info=progress2", "--stats", "--itemize-changes"]
+    dst = dst_mnt.rstrip("/") + "/"
+    rsync_path = shutil.which("rsync")
+    if rsync_path:
+        base = [
+            rsync_path,
+            "-aHAXx",
+            "--numeric-ids",
+            "--delete-after",
+            "--info=progress2",
+            "--stats",
+            "--itemize-changes",
+        ]
         for e in EXCLUDES:
             base += ["--exclude", e]
-        cmd = base + ["/", dst_mnt + "/"]
+        if exclude_boot:
+            for e in ("/boot", "/boot/", "/boot/*", "/boot/firmware", "/boot/firmware/*"):
+                base += ["--exclude", e]
+        cmd = base + ["/", dst]
         import subprocess
-    try:
-        return run(cmd, check=True, dry_run=dry_run, timeout=timeout_sec)
-    except subprocess.CalledProcessError as e:
-        if e.returncode in (23, 24):
-            print(f"[WARN] rsync completed with return code {e.returncode} (partial transfer/vanished files). Continuing.")
-            return e
-        raise
+        try:
+            return run(cmd, check=True, dry_run=dry_run, timeout=timeout_sec)
+        except subprocess.CalledProcessError as e:
+            if e.returncode in (23, 24):
+                print(
+                    f"[WARN] rsync completed with return code {e.returncode} (partial transfer/vanished files). Continuing.")
+                return e
+            raise
     # Fallback: cp -a (no delete, best effort)
-    return run(["cp","-a","/.", dst_mnt], check=True, dry_run=dry_run, timeout=timeout_sec)
+    result = run(["cp", "-a", "/.", dst_mnt], check=True, dry_run=dry_run, timeout=timeout_sec)
+    if exclude_boot:
+        for rel in ("boot", "boot/firmware"):
+            run(["rm", "-rf", f"{dst_mnt.rstrip('/')}/{rel}"], check=False, dry_run=dry_run)
+    return result
 
 
 # RSYNC_FALLBACK_OK helper
