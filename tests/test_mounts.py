@@ -55,13 +55,54 @@ def test_await_block_device_wrong_type(monkeypatch):
     assert "not a block device" in str(excinfo.value)
 
 
-def test_mkfs_raises_runtime_error(monkeypatch):
-    error = subprocess.CalledProcessError(1, ["mkfs.ext4"], output="", stderr="boom")
-    run_mock = mock.Mock(side_effect=error)
-    monkeypatch.setattr(mounts, "run", run_mock)
+def test_mkfs_raises_mkfs_error(monkeypatch):
+    calls: list[list[str]] = []
 
-    with pytest.raises(RuntimeError) as excinfo:
+    class DummyResult:
+        def __init__(self, rc: int = 0, out: str = "", err: str = "") -> None:
+            self.rc = rc
+            self.out = out
+            self.err = err
+
+    def fake_run(cmd, check=True, timeout=0.0, **_kwargs):  # noqa: ARG001 - signature matches executil.run
+        calls.append(cmd)
+        if cmd[0] == "wipefs":
+            return DummyResult()
+        if cmd[0] == "blkdiscard":
+            return DummyResult()
+        if cmd[0] == "mkfs.ext4":
+            raise subprocess.CalledProcessError(1, cmd, output="", stderr="boom")
+        raise AssertionError(f"unexpected command {cmd}")
+
+    monkeypatch.setattr(mounts, "run", fake_run)
+    monkeypatch.setattr(mounts, "_collect_device_state", lambda dev: {"device": dev, "mountpoints": [], "holders": [], "read_only": False})
+    monkeypatch.setattr(mounts, "udev_settle", lambda: None)
+    monkeypatch.setattr(mounts.time, "sleep", lambda *_: None)
+
+    with pytest.raises(mounts.MkfsError) as excinfo:
         mounts._mkfs("/dev/mapper/root", "ext4", label="root")
 
     assert "mkfs.ext4 failed on /dev/mapper/root: boom" in str(excinfo.value)
-    assert run_mock.call_args[0][0][0] == "mkfs.ext4"
+    assert excinfo.value.state["mkfs_attempts"]
+    assert calls[0][:2] == ["wipefs", "-a"]
+
+
+def test_mkfs_preflight_blocks_busy_device(monkeypatch):
+    run_mock = mock.Mock(side_effect=AssertionError("run should not be called when preflight fails"))
+    monkeypatch.setattr(mounts, "run", run_mock)
+    monkeypatch.setattr(
+        mounts,
+        "_collect_device_state",
+        lambda dev: {
+            "device": dev,
+            "mountpoints": ["/mnt/inuse"],
+            "holders": [],
+            "read_only": False,
+        },
+    )
+
+    with pytest.raises(mounts.MkfsError) as excinfo:
+        mounts._mkfs("/dev/mapper/root", "ext4", label="root")
+
+    assert "refusing to format" in str(excinfo.value)
+    run_mock.assert_not_called()
