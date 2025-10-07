@@ -53,6 +53,14 @@ def probe(device: str, dry_run: bool=False, read_only: bool | None = None) -> De
     # returns an arbitrary order.
     parts.sort(key=lambda c: c.get("name", ""))
 
+    if len(parts) < 3:
+        labels = [child.get("partlabel") or child.get("name") or child.get("path") for child in parts]
+        details = ", ".join(filter(None, labels)) or "<none>"
+        raise SystemExit(
+            "device layout incomplete for {device}: expected three partitions, "
+            "found {count} ({details})".format(device=device, count=len(parts), details=details)
+        )
+
     p1 = parts[0].get("path") or f"{device}p1"
     p2 = parts[1].get("path") or f"{device}p2"
     p3 = parts[2].get("path") or f"{device}p3"
