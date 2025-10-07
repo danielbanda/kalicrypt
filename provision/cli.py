@@ -25,7 +25,7 @@ from .firmware import assert_essentials, populate_esp
 from .initramfs import ensure_packages, rebuild, verify as verify_initramfs
 from .luks_lvm import close_luks, deactivate_vg, format_luks, make_vg_lv, open_luks
 from .model import Flags, ProvisionPlan
-from .mounts import MkfsError, bind_mounts, mount_targets, unmount_all
+from .mounts import bind_mounts, mount_targets, unmount_all
 from .partitioning import apply_layout, verify_layout
 from .postcheck import cleanup_pycache, run_postcheck
 from .postboot import install_postboot_check as install_postboot_heartbeat
@@ -464,8 +464,8 @@ def _run_postcheck_only(plan: ProvisionPlan, flags: Flags, passphrase_file: str)
     dm = probe(plan.device)
     mounts = None
     open_luks(dm.p3, dm.luks_name, passphrase_file)
-    mounts = mount_targets(dm.device, dry_run=False, destructive=False)
-    bind_mounts(mounts.mnt, read_only=True)
+    mounts = mount_targets(dm.device, dry_run=False)
+    bind_mounts(mounts.mnt)
     try:
         p1_uuid = uuid_of(dm.p1)
         p2_uuid = uuid_of(dm.p2)
@@ -520,7 +520,7 @@ def _run_postcheck_only(plan: ProvisionPlan, flags: Flags, passphrase_file: str)
     finally:
         if mounts is not None:
             try:
-                unmount_all(mounts.mnt, boot=mounts.boot, esp=mounts.esp)
+                unmount_all(mounts.mnt)
             except Exception:
                 pass
         try:
@@ -624,14 +624,8 @@ def main(argv: Optional[list[str]] = None) -> int:
     open_luks(dm.p3, dm.luks_name, passphrase_file)
     make_vg_lv(dm.vg, dm.lv)
 
-    try:
-        mounts = mount_targets(dm.device, dry_run=False, destructive=True)
-    except MkfsError as exc:
-        extra = {"hint": str(exc)}
-        if getattr(exc, "state", None):
-            extra["device_state"] = exc.state
-        _emit_result("FAIL_MKFS", extra=extra)
-    bind_mounts(mounts.mnt, read_only=False)
+    mounts = mount_targets(dm.device, dry_run=False)
+    bind_mounts(mounts.mnt)
 
     rsync_meta: Dict[str, Any] = {"exit": 0, "err": None, "out": None, "warning": False, "note": None}
     pre_sync_snapshot: Dict[str, Any] = {}
@@ -689,7 +683,7 @@ def main(argv: Optional[list[str]] = None) -> int:
         except Exception:
             pass
         try:
-            unmount_all(mounts.mnt, boot=mounts.boot, esp=mounts.esp)
+            unmount_all(mounts.mnt)
         except Exception:
             pass
         raise
@@ -744,7 +738,7 @@ def main(argv: Optional[list[str]] = None) -> int:
     _record_result("ETE_PREBOOT_OK", preboot_payload)
 
     try:
-        unmount_all(mounts.mnt, boot=mounts.boot, esp=mounts.esp)
+        unmount_all(mounts.mnt)
     except Exception:
         pass
 
