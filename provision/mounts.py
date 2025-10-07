@@ -122,17 +122,17 @@ def mount_targets(device: str, dry_run: bool=False, destructive: bool=True) -> M
     boot = f"{mnt}/boot"
     esp = f"{boot}/firmware"
     run(["mkdir","-p", mnt, boot, esp], check=True)
+    # Bring the volume group online before touching any of the logical
+    # volumes.  This ensures the mapper path is available even when the VG is
+    # inactive (for example when provisioning over an existing install where
+    # ``vgcreate``/``lvcreate`` are no-ops).
+    _activate_vg(dm)
+    udev_settle()
     # ensure fs only when destructive
     if destructive:
         _ensure_fs(dm.p1, "vfat", label="EFI")
         _ensure_fs(dm.p2, "ext4", label="boot")
         _ensure_fs(_root_lv_path(dm), "ext4", label="root")
-    # When verifying an existing install, the root logical volume may not be
-    # active yet.  Ensure the volume group is brought online before mounting
-    # anything from it.  ``vgchange -ay`` is safe to run even if the devices
-    # are already active and matches the documented manual verification flow.
-    _activate_vg(dm)
-    udev_settle()
     # mount (ro when non-destructive)
     ro_opts = ["ro"] if not destructive else None
     _mount(_root_lv_path(dm), mnt, fstype="ext4", opts=ro_opts)
