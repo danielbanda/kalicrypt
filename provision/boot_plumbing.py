@@ -10,7 +10,13 @@ def write_fstab(mnt: str, p1_uuid: str, p2_uuid: str):
 UUID={p2_uuid}  /boot           ext4   defaults                           0  2
 /dev/mapper/rp5vg-root  /       ext4   defaults                           0  1
 """
-    with open(fstab,'w',encoding='utf-8') as f: f.write(data)
+    with open(fstab, 'w', encoding='utf-8') as f:
+        f.write(data)
+        try:
+            f.flush()
+            os.fsync(f.fileno())
+        except Exception:
+            pass
 
 def write_crypttab(mnt: str, luks_uuid: str, passfile: str|None, keyscript_path: str|None=None):
     ct = os.path.join(mnt, 'etc/crypttab')
@@ -59,6 +65,11 @@ def write_cmdline(
             return
     with open(p, 'w', encoding='utf-8') as f:
         f.write(cmd + "\n")
+        try:
+            f.flush()
+            os.fsync(f.fileno())
+        except Exception:
+            pass
 
 
 def assert_cmdline_uuid(dst_boot_fw: str, luks_uuid: str, root_mapper: str | None = None):
