@@ -624,7 +624,7 @@ def main(argv: Optional[list[str]] = None) -> int:
     open_luks(dm.p3, dm.luks_name, passphrase_file)
     make_vg_lv(dm.vg, dm.lv)
 
-    mounts = mount_targets_safe(dm.device, dry_run=False)
+    mounts = mount_targets(dm.device, dry_run=False)
     bind_mounts(mounts.mnt)
 
     rsync_meta: Dict[str, Any] = {"exit": 0, "err": None, "out": None, "warning": False, "note": None}
