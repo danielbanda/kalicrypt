@@ -206,7 +206,7 @@ def mount_targets_safe(device: str, dry_run: bool=False) -> Mounts:
             raise SystemExit(f"mount failed: {' '.join(cmd)} | err={r.err or r.out}")
 
     # Root logical volume path
-    root_dev = f"/dev/mapper/{dm.vg}-{dm.lv}"
+    root_dev = dm.root_lv_path or f"/dev/mapper/{dm.vg}-{dm.lv}"
     # Attempt mount directly
     _try_mount(root_dev, mnt, fstype="ext4", opts=["rw"])
     _try_mount(dm.p2, boot, fstype="ext4", opts=["rw"])

@@ -23,7 +23,14 @@ from .devices import kill_holders, probe, swapoff_all, uuid_of
 from .executil import append_jsonl, run, trace, udev_settle
 from .firmware import assert_essentials, populate_esp
 from .initramfs import ensure_packages, rebuild, verify as verify_initramfs
-from .luks_lvm import close_luks, deactivate_vg, format_luks, make_vg_lv, open_luks
+from .luks_lvm import (
+    activate_vg,
+    close_luks,
+    deactivate_vg,
+    format_luks,
+    make_vg_lv,
+    open_luks,
+)
 from .model import Flags, ProvisionPlan
 from .mounts import mount_targets_safe, bind_mounts, mount_targets, unmount_all
 from .partitioning import apply_layout, verify_layout
@@ -464,6 +471,7 @@ def _run_postcheck_only(plan: ProvisionPlan, flags: Flags, passphrase_file: str)
     dm = probe(plan.device)
     mounts = None
     open_luks(dm.p3, dm.luks_name, passphrase_file)
+    activate_vg(dm.vg)
     mounts = mount_targets_safe(dm.device, dry_run=False)
     bind_mounts(mounts.mnt)
     try:
@@ -523,6 +531,10 @@ def _run_postcheck_only(plan: ProvisionPlan, flags: Flags, passphrase_file: str)
                 unmount_all(mounts.mnt)
             except Exception:
                 pass
+        try:
+            deactivate_vg(dm.vg)
+        except Exception:
+            pass
         try:
             close_luks(dm.luks_name)
         except Exception:
