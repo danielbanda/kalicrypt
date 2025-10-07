@@ -1,0 +1,15 @@
+{
+  "timestamp": "2025-10-02T23:03:22.243698Z",
+  "removed": [
+    "02_SCRIPTS/deprecated/ete_nvme_provision.py",
+    "02_SCRIPTS/deprecated/ete_quick_verify.py",
+    "02_SCRIPTS/deprecated/"
+  ],
+  "added": [
+    "tools/check-repo-clean.py"
+  ],
+  "updated_docs": [
+    "docs/projects/RP5/rules.md"
+  ],
+  "compile_errors": []
+}

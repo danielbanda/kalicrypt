@@ -1,0 +1,514 @@
+[
+  {
+    "file": "boot_plumbing.py",
+    "global_imports": [
+      {
+        "type": "import",
+        "names": [
+          "os",
+          "re",
+          "json",
+          "subprocess"
+        ],
+        "lineno": 3
+      },
+      {
+        "type": "from",
+        "module": "executil",
+        "names": [
+          "run"
+        ],
+        "lineno": 5
+      },
+      {
+        "type": "from",
+        "module": "executil",
+        "names": [
+          "run"
+        ],
+        "lineno": 7
+      }
+    ],
+    "local_imports": [],
+    "dual_import_style": false,
+    "shadow_assignments": []
+  },
+  {
+    "file": "cli.py",
+    "error": "parse_error: expected an indented block after 'try' statement on line 5 (<unknown>, line 6)"
+  },
+  {
+    "file": "devices.py",
+    "global_imports": [
+      {
+        "type": "from",
+        "module": "model",
+        "names": [
+          "DeviceMap"
+        ],
+        "lineno": 3
+      },
+      {
+        "type": "from",
+        "module": "executil",
+        "names": [
+          "run",
+          "udev_settle"
+        ],
+        "lineno": 4
+      },
+      {
+        "type": "from",
+        "module": "model",
+        "names": [
+          "DeviceMap"
+        ],
+        "lineno": 6
+      },
+      {
+        "type": "from",
+        "module": "executil",
+        "names": [
+          "run",
+          "udev_settle"
+        ],
+        "lineno": 7
+      }
+    ],
+    "local_imports": [],
+    "dual_import_style": false,
+    "shadow_assignments": []
+  },
+  {
+    "file": "errors.py",
+    "global_imports": [],
+    "local_imports": [],
+    "dual_import_style": false,
+    "shadow_assignments": []
+  },
+  {
+    "file": "executil.py",
+    "global_imports": [
+      {
+        "type": "from",
+        "module": "typing",
+        "names": [
+          "Sequence"
+        ],
+        "lineno": 3
+      },
+      {
+        "type": "import",
+        "names": [
+          "subprocess",
+          "shlex",
+          "time",
+          "os",
+          "json",
+          "datetime"
+        ],
+        "lineno": 4
+      }
+    ],
+    "local_imports": [
+      {
+        "type": "import",
+        "names": [
+          "time"
+        ],
+        "lineno": 65
+      }
+    ],
+    "dual_import_style": false,
+    "shadow_assignments": []
+  },
+  {
+    "file": "firmware.py",
+    "global_imports": [
+      {
+        "type": "import",
+        "names": [
+          "os",
+          "glob",
+          "shutil"
+        ],
+        "lineno": 3
+      },
+      {
+        "type": "from",
+        "module": "executil",
+        "names": [
+          "run"
+        ],
+        "lineno": 5
+      },
+      {
+        "type": "from",
+        "module": "executil",
+        "names": [
+          "run"
+        ],
+        "lineno": 7
+      }
+    ],
+    "local_imports": [],
+    "dual_import_style": false,
+    "shadow_assignments": []
+  },
+  {
+    "file": "initramfs.py",
+    "global_imports": [
+      {
+        "type": "import",
+        "names": [
+          "os",
+          "re",
+          "subprocess"
+        ],
+        "lineno": 3
+      },
+      {
+        "type": "from",
+        "module": "executil",
+        "names": [
+          "run"
+        ],
+        "lineno": 5
+      },
+      {
+        "type": "from",
+        "module": "executil",
+        "names": [
+          "run"
+        ],
+        "lineno": 7
+      }
+    ],
+    "local_imports": [],
+    "dual_import_style": false,
+    "shadow_assignments": []
+  },
+  {
+    "file": "keyscript.py",
+    "global_imports": [
+      {
+        "type": "import",
+        "names": [
+          "os",
+          "stat"
+        ],
+        "lineno": 5
+      },
+      {
+        "type": "from",
+        "module": "executil",
+        "names": [
+          "run"
+        ],
+        "lineno": 7
+      },
+      {
+        "type": "from",
+        "module": "executil",
+        "names": [
+          "run"
+        ],
+        "lineno": 9
+      }
+    ],
+    "local_imports": [],
+    "dual_import_style": false,
+    "shadow_assignments": []
+  },
+  {
+    "file": "luks_lvm.py",
+    "global_imports": [
+      {
+        "type": "from",
+        "module": "executil",
+        "names": [
+          "run",
+          "udev_settle"
+        ],
+        "lineno": 4
+      },
+      {
+        "type": "from",
+        "module": "executil",
+        "names": [
+          "run",
+          "udev_settle"
+        ],
+        "lineno": 6
+      }
+    ],
+    "local_imports": [],
+    "dual_import_style": false,
+    "shadow_assignments": [
+      {
+        "name": "probe",
+        "lineno": 14
+      }
+    ]
+  },
+  {
+    "file": "model.py",
+    "global_imports": [
+      {
+        "type": "from",
+        "module": "dataclasses",
+        "names": [
+          "dataclass"
+        ],
+        "lineno": 1
+      },
+      {
+        "type": "from",
+        "module": "typing",
+        "names": [
+          "Optional"
+        ],
+        "lineno": 2
+      }
+    ],
+    "local_imports": [],
+    "dual_import_style": false,
+    "shadow_assignments": []
+  },
+  {
+    "file": "mounts.py",
+    "global_imports": [
+      {
+        "type": "from",
+        "module": "model",
+        "names": [
+          "Mounts",
+          "DeviceMap"
+        ],
+        "lineno": 4
+      },
+      {
+        "type": "from",
+        "module": "executil",
+        "names": [
+          "run",
+          "udev_settle"
+        ],
+        "lineno": 5
+      },
+      {
+        "type": "from",
+        "module": "devices",
+        "names": [
+          "probe"
+        ],
+        "lineno": 6
+      },
+      {
+        "type": "from",
+        "module": "model",
+        "names": [
+          "Mounts",
+          "DeviceMap"
+        ],
+        "lineno": 8
+      },
+      {
+        "type": "from",
+        "module": "executil",
+        "names": [
+          "run",
+          "udev_settle"
+        ],
+        "lineno": 9
+      },
+      {
+        "type": "from",
+        "module": "devices",
+        "names": [
+          "probe"
+        ],
+        "lineno": 10
+      }
+    ],
+    "local_imports": [],
+    "dual_import_style": false,
+    "shadow_assignments": []
+  },
+  {
+    "file": "partitioning.py",
+    "global_imports": [
+      {
+        "type": "import",
+        "names": [
+          "re"
+        ],
+        "lineno": 3
+      },
+      {
+        "type": "from",
+        "module": "executil",
+        "names": [
+          "run",
+          "udev_settle"
+        ],
+        "lineno": 6
+      },
+      {
+        "type": "from",
+        "module": "executil",
+        "names": [
+          "run",
+          "udev_settle"
+        ],
+        "lineno": 8
+      }
+    ],
+    "local_imports": [],
+    "dual_import_style": false,
+    "shadow_assignments": []
+  },
+  {
+    "file": "postcheck.py",
+    "global_imports": [
+      {
+        "type": "import",
+        "names": [
+          "os",
+          "glob",
+          "re"
+        ],
+        "lineno": 3
+      }
+    ],
+    "local_imports": [
+      {
+        "type": "import",
+        "names": [
+          "re",
+          "os"
+        ],
+        "lineno": 30
+      }
+    ],
+    "dual_import_style": false,
+    "shadow_assignments": []
+  },
+  {
+    "file": "preboot_check.py",
+    "global_imports": [
+      {
+        "type": "import",
+        "names": [
+          "json",
+          "os",
+          "re",
+          "subprocess",
+          "sys"
+        ],
+        "lineno": 2
+      }
+    ],
+    "local_imports": [],
+    "dual_import_style": false,
+    "shadow_assignments": []
+  },
+  {
+    "file": "prompt_lint.py",
+    "global_imports": [
+      {
+        "type": "import",
+        "names": [
+          "argparse",
+          "sys",
+          "os",
+          "re",
+          "json"
+        ],
+        "lineno": 2
+      },
+      {
+        "type": "from",
+        "module": "pathlib",
+        "names": [
+          "Path"
+        ],
+        "lineno": 3
+      }
+    ],
+    "local_imports": [],
+    "dual_import_style": false,
+    "shadow_assignments": []
+  },
+  {
+    "file": "recovery.py",
+    "global_imports": [
+      {
+        "type": "import",
+        "names": [
+          "os",
+          "tarfile",
+          "json"
+        ],
+        "lineno": 2
+      },
+      {
+        "type": "from",
+        "module": "executil",
+        "names": [
+          "run"
+        ],
+        "lineno": 4
+      },
+      {
+        "type": "from",
+        "module": "executil",
+        "names": [
+          "run"
+        ],
+        "lineno": 6
+      }
+    ],
+    "local_imports": [],
+    "dual_import_style": false,
+    "shadow_assignments": []
+  },
+  {
+    "file": "root_sync.py",
+    "global_imports": [
+      {
+        "type": "import",
+        "names": [
+          "shutil"
+        ],
+        "lineno": 3
+      },
+      {
+        "type": "from",
+        "module": "executil",
+        "names": [
+          "run"
+        ],
+        "lineno": 5
+      },
+      {
+        "type": "from",
+        "module": "executil",
+        "names": [
+          "run"
+        ],
+        "lineno": 7
+      }
+    ],
+    "local_imports": [],
+    "dual_import_style": false,
+    "shadow_assignments": []
+  },
+  {
+    "file": "safety.py",
+    "global_imports": [],
+    "local_imports": [],
+    "dual_import_style": false,
+    "shadow_assignments": []
+  }
+]

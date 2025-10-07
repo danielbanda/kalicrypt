@@ -1,0 +1,23 @@
+{
+  "timestamp_utc": "20251002_1638",
+  "patched_files": [
+    "/mnt/data/rp5_baseline/provision/rp5.provision",
+    "/mnt/data/rp5_baseline/provision/ete_postcheck.sh"
+  ],
+  "notes": [
+    "Added populate_esp()",
+    "Added pre_cleanup()",
+    "Added verify_initramfs()",
+    "Added refuse_if_target_collides()",
+    "Added final_flush()",
+    "Enhanced ete_postcheck.sh: firmware/initramfs checks"
+  ],
+  "summary": {
+    "found": {
+      "scripts_dir": "/mnt/data/rp5_baseline/provision",
+      "rp5.provision": "/mnt/data/rp5_baseline/provision/rp5.provision",
+      "ete_postcheck.sh": "/mnt/data/rp5_baseline/provision/ete_postcheck.sh",
+      "ete_quick_verify.py": "/mnt/data/rp5_baseline/provision/ete_quick_verify.py"
+    }
+  }
+}

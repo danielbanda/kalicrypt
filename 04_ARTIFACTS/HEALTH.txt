@@ -1,0 +1,10 @@
+RP5 HEALTH SNAPSHOT — 20251003_0523
+
+Files: 54
+Latest next steps: next_steps_20251003_0453.md
+Python: Python 3.11.8
+
+RESULT markers (placeholders):
+- RESULT: ETE_PREBOOT_OK
+- RESULT: BOOT_OK
+- RESULT: FAIL:<reason>

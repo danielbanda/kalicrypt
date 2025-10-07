@@ -1,0 +1,28 @@
+Compared to previous tar: RP5_full_checkpoint_20251003_0516_with_provenance.tar.gz
+
+    ADDED (20):
+    04_ARTIFACTS/CLI_HELP.txt
+04_ARTIFACTS/DRYRUN.out
+04_ARTIFACTS/HEALTH.txt
+04_ARTIFACTS/MANIFEST.json
+04_ARTIFACTS/PLAN_SAMPLE.json
+04_ARTIFACTS/TREE_AFTER.txt
+99_META/session_marker.txt
+provision/__pycache__/__init__.cpython-311.pyc
+provision/__pycache__/boot_plumbing.cpython-311.pyc
+provision/__pycache__/cli.cpython-311.pyc
+provision/__pycache__/devices.cpython-311.pyc
+provision/__pycache__/executil.cpython-311.pyc
+provision/__pycache__/firmware.cpython-311.pyc
+provision/__pycache__/initramfs.cpython-311.pyc
+provision/__pycache__/luks_lvm.cpython-311.pyc
+provision/__pycache__/model.cpython-311.pyc
+provision/__pycache__/mounts.cpython-311.pyc
+provision/__pycache__/partitioning.cpython-311.pyc
+provision/__pycache__/recovery.cpython-311.pyc
+provision/__pycache__/root_sync.cpython-311.pyc
+
+    REMOVED (0):
+
+
+    CHANGED (0):

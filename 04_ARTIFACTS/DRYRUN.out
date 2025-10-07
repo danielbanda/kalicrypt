@@ -1,0 +1,25 @@
+$ python -m rp5.provision --plan /dev/placeholder
+$ python -m rp5.provision --dry-run --plan /dev/placeholder
+
+== CLI HELP ==
+usage: ete_nvme_provision [-h] [--esp-mb ESP_MB] [--boot-mb BOOT_MB]
+                          [--passphrase-file PASSPHRASE_FILE] [--plan]
+                          [--dry-run] [--reboot] [--do-postcheck]
+                          [--tpm-keyscript] [--yes] [--skip-rsync]
+                          device
+
+positional arguments:
+  device
+
+options:
+  -h, --help            show this help message and exit
+  --esp-mb ESP_MB
+  --boot-mb BOOT_MB
+  --passphrase-file PASSPHRASE_FILE
+  --plan
+  --dry-run
+  --reboot
+  --do-postcheck
+  --tpm-keyscript
+  --yes
+  --skip-rsync

@@ -1,0 +1,25 @@
+{
+  "device": "/dev/placeholder",
+  "esp_mb": 256,
+  "boot_mb": 512,
+  "passphrase_file": "<path-or-null>",
+  "flags": {
+    "plan": true,
+    "dry_run": true,
+    "do_postcheck": false,
+    "tpm_keyscript": false,
+    "assume_yes": false,
+    "skip_rsync": false
+  },
+  "steps": [
+    "safety.pre_cleanup",
+    "partitioning.apply_layout",
+    "luks_lvm.format_luks + open_luks + make_vg_lv",
+    "mounts.mount_targets + bind_mounts",
+    "root_sync.rsync_root",
+    "firmware.populate_esp + boot_plumbing.write_*",
+    "initramfs.ensure_packages + rebuild + verify",
+    "preboot_check.summary",
+    "recovery.install_postboot_check + bundle_artifacts"
+  ]
+}
