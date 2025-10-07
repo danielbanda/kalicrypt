@@ -1,11 +1,26 @@
 
 import os, subprocess, json, shlex
 
+_PRIVILEGED_BINARIES = {"cryptsetup"}
+
+
+def _needs_sudo(cmd_list: list[str]) -> bool:
+    if not cmd_list:
+        return False
+    if cmd_list[0] == "sudo":
+        return False
+    if os.geteuid() == 0:
+        return False
+    return cmd_list[0] in _PRIVILEGED_BINARIES
+
+
 def _run(cmd, check=False):
     if isinstance(cmd, str):
         cmd_list = shlex.split(cmd)
     else:
-        cmd_list = cmd
+        cmd_list = list(cmd)
+    if _needs_sudo(cmd_list):
+        cmd_list = ["sudo"] + cmd_list
     proc = subprocess.run(cmd_list, capture_output=True, text=True)
     return {
         "cmd": cmd_list,
