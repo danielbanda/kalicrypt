@@ -464,7 +464,7 @@ def _run_postcheck_only(plan: ProvisionPlan, flags: Flags, passphrase_file: str)
     dm = probe(plan.device)
     mounts = None
     open_luks(dm.p3, dm.luks_name, passphrase_file)
-    mounts = mount_targets(dm.device, dry_run=False)
+    mounts = mount_targets(dm.device, dry_run=False, destructive=False)
     bind_mounts(mounts.mnt)
     try:
         p1_uuid = uuid_of(dm.p1)

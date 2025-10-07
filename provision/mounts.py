@@ -7,10 +7,24 @@ def _blkid(path: str) -> str:
     r = run(["blkid","-s","TYPE","-o","value", path], check=False)
     return (r.out or "").strip()
 
-def _ensure_fs(dev: str, fstype: str, label: str = None):
+def _ensure_fs(dev: str, fstype: str, label: str = None, *, destructive: bool = True):
+    """Ensure the target block device has the expected filesystem.
+
+    When ``destructive`` is ``False`` the helper acts as a guard instead of
+    provisioning a fresh filesystem.  This protects flows such as
+    ``--do-postcheck`` where we must *only* observe an existing installation.
+    In that mode we merely verify the detected filesystem type and abort if the
+    expectation is not met.
+    """
+
     cur = _blkid(dev)
     if cur == fstype:
         return
+
+    if not destructive:
+        raise SystemExit(
+            f"refusing to format {dev}: expected {fstype!r}, detected {cur!r}"
+        )
     if fstype == "vfat":
         args = ["mkfs.vfat","-F","32"]
         if label: args += ["-n", label]
@@ -34,18 +48,23 @@ def _mount(dev: str, dirpath: str, opts: list[str] = None):
     run(cmd, check=True)
     udev_settle()
 
-def mount_targets(device: str, dry_run: bool=False) -> Mounts:
+def mount_targets(
+    device: str,
+    dry_run: bool=False,
+    *,
+    destructive: bool = True,
+) -> Mounts:
     dm = probe(device, dry_run=dry_run)
     mnt = "/mnt/nvme"
     boot = f"{mnt}/boot"
     esp = f"{boot}/firmware"
 
     # Ensure filesystems exist
-    _ensure_fs(dm.p1, "vfat", label="EFI")
-    _ensure_fs(dm.p2, "ext4", label="boot")
+    _ensure_fs(dm.p1, "vfat", label="EFI", destructive=destructive)
+    _ensure_fs(dm.p2, "ext4", label="boot", destructive=destructive)
     # Root LV is fixed name
     root_dev = "/dev/mapper/rp5vg-root"
-    _ensure_fs(root_dev, "ext4", label="root" )
+    _ensure_fs(root_dev, "ext4", label="root", destructive=destructive )
 
     # Mount in correct order
     _mount(root_dev, mnt)
