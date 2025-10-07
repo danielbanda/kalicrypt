@@ -6,10 +6,12 @@ from .executil import run
 def write_fstab(mnt: str, p1_uuid: str, p2_uuid: str):
     fstab = os.path.join(mnt, 'etc/fstab')
     os.makedirs(os.path.dirname(fstab), exist_ok=True)
-    data = f"""UUID={p1_uuid}  /boot/firmware  vfat   defaults,uid=0,gid=0,umask=0077  0  1
-UUID={p2_uuid}  /boot           ext4   defaults                           0  2
-/dev/mapper/rp5vg-root  /       ext4   defaults                           0  1
-"""
+    lines = [
+        f"UUID={p1_uuid}  /boot/firmware  vfat  defaults,uid=0,gid=0,umask=0077  0  1",
+        f"UUID={p2_uuid}  /boot  ext4  defaults  0  2",
+        "/dev/mapper/rp5vg-root  /  ext4  defaults  0  1",
+    ]
+    data = "\n".join(lines) + "\n"
     with open(fstab, 'w', encoding='utf-8') as f:
         f.write(data)
         try:
@@ -22,10 +24,9 @@ def write_crypttab(mnt: str, luks_uuid: str, passfile: str|None, keyscript_path:
     ct = os.path.join(mnt, 'etc/crypttab')
     os.makedirs(os.path.dirname(ct), exist_ok=True)
     key = passfile if passfile else 'none'
-    opts = 'luks,discard'
     if keyscript_path:
-        opts += f',keyscript={keyscript_path}'
-    line = f"cryptroot  UUID={luks_uuid}  {key}  {opts}\n"
+        key = f"{key} keyscript={keyscript_path}"
+    line = f"cryptroot UUID={luks_uuid}  {key}\n"
     with open(ct, 'w', encoding='utf-8') as f:
         f.write(line)
         try:
@@ -53,8 +54,7 @@ def write_cmdline(
     cmd = (
         f"cryptdevice=UUID={luks_uuid}:cryptroot "
         f"root={mapper_path} "
-        "rootfstype=ext4 fsck.repair=yes rootwait "
-        "console=serial0,115200 console=tty1"
+        "rootfstype=ext4 rootwait"
     )
     if os.path.exists(p):
         try:

@@ -45,8 +45,22 @@ def nvme_boot_verification(device, esp_mb=None, boot_mb=None, passphrase_file=No
     step["checks"]["blkid_p1"] = _run(["blkid", p1])
     step["checks"]["blkid_p2"] = _run(["blkid", p2])
     step["checks"]["blkid_p3"] = _run(["blkid", p3])
-    step["checks"]["luks_uuid"] = _run(["cryptsetup", "luksUUID", p3])
-    step["checks"]["cmdline_preview"] = {"path": f"{mnt_root}/boot/firmware/cmdline.txt", "text": _read(f"{mnt_root}/boot/firmware/cmdline.txt")}
+    luks_check = _run(["cryptsetup", "luksUUID", p3])
+    luks_uuid = (luks_check.get("out") or "").strip()
+    step["checks"]["luks_uuid"] = luks_check
+    cmdline_path = f"{mnt_root}/boot/firmware/cmdline.txt"
+    cmdline_text = _read(cmdline_path).strip()
+    cmdline_expected = (
+        f"cryptdevice=UUID={luks_uuid}:cryptroot "
+        "root=/dev/mapper/rp5vg-root "
+        "rootfstype=ext4 rootwait"
+    )
+    step["checks"]["cmdline_preview"] = {
+        "path": cmdline_path,
+        "text": cmdline_text,
+        "expected": cmdline_expected,
+        "matches": cmdline_text == cmdline_expected,
+    }
     res["steps"].append(step)
 
     step = {"name": "initramfs_modules", "checks": {}}
@@ -54,8 +68,26 @@ def nvme_boot_verification(device, esp_mb=None, boot_mb=None, passphrase_file=No
     res["steps"].append(step)
 
     step = {"name": "crypttab_fstab_consistency", "checks": {}}
-    step["checks"]["crypttab"] = {"path": f"{mnt_root}/etc/crypttab", "text": _read(f"{mnt_root}/etc/crypttab")}
-    step["checks"]["fstab"] = {"path": f"{mnt_root}/etc/fstab", "text": _read(f"{mnt_root}/etc/fstab")}
+    crypttab_path = f"{mnt_root}/etc/crypttab"
+    fstab_path = f"{mnt_root}/etc/fstab"
+    crypttab_text = _read(crypttab_path).strip()
+    fstab_text = _read(fstab_path)
+    expected_key = passphrase_file if passphrase_file else "none"
+    crypttab_expected = f"cryptroot UUID={luks_uuid}  {expected_key}"
+    step["checks"]["crypttab"] = {
+        "path": crypttab_path,
+        "text": crypttab_text,
+        "expected": crypttab_expected,
+        "matches": crypttab_text == crypttab_expected,
+    }
+    expected_fstab_root = "/dev/mapper/rp5vg-root  /  ext4  defaults  0  1"
+    fstab_lines = [ln.strip() for ln in fstab_text.splitlines() if ln.strip()]
+    step["checks"]["fstab"] = {
+        "path": fstab_path,
+        "text": fstab_text,
+        "expected_root_entry": expected_fstab_root,
+        "matches": expected_fstab_root in fstab_lines,
+    }
     res["steps"].append(step)
 
     step = {"name": "esp_cmdline_compare", "checks": {}}
@@ -93,5 +125,11 @@ def nvme_boot_verification(device, esp_mb=None, boot_mb=None, passphrase_file=No
     step["checks"]["no_partuuid"] = "PARTUUID=" not in cmdline_txt
     step["checks"]["has_rootwait"] = "rootwait" in cmdline_txt
     res["steps"].append(step)
+
+    res["templates"] = {
+        "cmdline": cmdline_expected,
+        "crypttab": crypttab_expected,
+        "fstab_root": expected_fstab_root,
+    }
 
     return res
