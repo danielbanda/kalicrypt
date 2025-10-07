@@ -33,6 +33,12 @@ def make_vg_lv(vg: str, lv: str, size: str="100%FREE", dry_run: bool=False):
     run(["lvcreate","-n", lv, "-l", size, vg], check=False, dry_run=dry_run, timeout=60.0)
     udev_settle()
 
+def activate_vg(vg: str, dry_run: bool=False):
+    """Activate logical volumes for ``vg`` if present."""
+
+    run(["vgchange", "-ay", vg], check=False, dry_run=dry_run, timeout=60.0)
+    udev_settle()
+
 def deactivate_vg(vg: str, dry_run: bool=False):
     run(["vgchange","-an", vg], check=False, dry_run=dry_run, timeout=60.0)
 
