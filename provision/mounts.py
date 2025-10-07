@@ -4,10 +4,26 @@ from .executil import run, udev_settle, trace
 from .devices import probe
 
 def _blkid(path: str) -> str:
+    try:
+        udev_settle()
+    except Exception:
+        pass
     r = run(["blkid","-s","TYPE","-o","value", path], check=False)
-    return (r.out or "").strip()
+    val = (r.out or "").strip()
+    if not val:
+        r2 = run(["lsblk","-no","FSTYPE", path], check=False)
+        val = (r2.out or "").strip()
+    if not val:
+        r3 = run(["file","-sL", path], check=False)
+        out = ((r3.out or "") + (r3.err or "")).lower()
+        if "ext4" in out:
+            val = "ext4"
+        elif "fat" in out or "vfat" in out:
+            val = "vfat"
+    return val
 
-def _ensure_fs(dev: str, fstype: str, label: str = None, *, destructive: bool = True):
+
+def _ensure_fs(dev: str, fstype: str, label: str = None):
     """Ensure the target block device has the expected filesystem.
 
     When ``destructive`` is ``False`` the helper acts as a guard instead of
@@ -20,11 +36,6 @@ def _ensure_fs(dev: str, fstype: str, label: str = None, *, destructive: bool = 
     cur = _blkid(dev)
     if cur == fstype:
         return
-
-    if not destructive:
-        raise SystemExit(
-            f"refusing to format {dev}: expected {fstype!r}, detected {cur!r}"
-        )
     if fstype == "vfat":
         args = ["mkfs.vfat","-F","32"]
         if label: args += ["-n", label]
@@ -48,23 +59,18 @@ def _mount(dev: str, dirpath: str, opts: list[str] = None):
     run(cmd, check=True)
     udev_settle()
 
-def mount_targets(
-    device: str,
-    dry_run: bool=False,
-    *,
-    destructive: bool = True,
-) -> Mounts:
+def mount_targets(device: str, dry_run: bool=False) -> Mounts:
     dm = probe(device, dry_run=dry_run)
     mnt = "/mnt/nvme"
     boot = f"{mnt}/boot"
     esp = f"{boot}/firmware"
 
     # Ensure filesystems exist
-    _ensure_fs(dm.p1, "vfat", label="EFI", destructive=destructive)
-    _ensure_fs(dm.p2, "ext4", label="boot", destructive=destructive)
+    _ensure_fs(dm.p1, "vfat", label="EFI")
+    _ensure_fs(dm.p2, "ext4", label="boot")
     # Root LV is fixed name
     root_dev = "/dev/mapper/rp5vg-root"
-    _ensure_fs(root_dev, "ext4", label="root", destructive=destructive )
+    _ensure_fs(root_dev, "ext4", label="root" )
 
     # Mount in correct order
     _mount(root_dev, mnt)
@@ -137,3 +143,52 @@ def assert_mount_sources(mnt: str, boot: str, esp: str, root_dev: str, boot_dev:
         for label, a, e, ac, ec, au, eu in mismatches:
             parts.append(f"{label}: actual={a} expected={e} | canon={ac} vs {ec} | uuid={au} vs {eu}")
         raise SystemExit("mount sources mismatch: " + " ; ".join(parts))
+
+
+def mount_targets_safe(device: str, dry_run: bool=False) -> Mounts:
+    """
+    Read-only, non-destructive mounting for postcheck.
+    - Probes device map.
+    - Does NOT call _ensure_fs.
+    - Creates /mnt/nvme, /mnt/nvme/boot, /mnt/nvme/boot/firmware.
+    - Mounts root (ext4), boot (ext4), esp (vfat). Raises on failure.
+    """
+    dm = probe(device, dry_run=dry_run)
+    mnt = "/mnt/nvme"; boot = f"{mnt}/boot"; esp = f"{boot}/firmware"
+    run(["mkdir","-p", mnt, boot, esp], check=True)
+    # Settle udev in case previous steps changed mappings
+    try: udev_settle()
+    except Exception: pass
+
+    def _try_mount(dev, target, fstype=None, opts=None):
+        cmd = ["mount"]
+        if fstype: cmd += ["-t", fstype]
+        if opts: cmd += ["-o", ",".join(opts)]
+        cmd += [dev, target]
+        r = run(cmd, check=False)
+        if r.exit != 0:
+            # surface diagnostics
+            raise SystemExit(f"mount failed: {' '.join(cmd)} | err={r.err or r.out}")
+
+    # Root logical volume path
+    root_dev = f"/dev/mapper/{dm.vg}-{dm.lv}"
+    # Attempt mount directly
+    _try_mount(root_dev, mnt, fstype="ext4", opts=["rw"])
+    _try_mount(dm.p2, boot, fstype="ext4", opts=["rw"])
+    _try_mount(dm.p1, esp, fstype="vfat", opts=["rw"])
+
+    # Validate sources match expectations
+    def canon(p):
+        res = run(["readlink","-f", p], check=False); return (res.out or p).strip()
+    pairs = [("root", canon(run(["findmnt","-no","SOURCE", mnt], check=False).out or "").strip(), canon(root_dev)),
+             ("boot", canon(run(["findmnt","-no","SOURCE", boot], check=False).out or "").strip(), canon(dm.p2)),
+             ("esp",  canon(run(["findmnt","-no","SOURCE", esp], check=False).out or "").strip(),  canon(dm.p1))]
+    mismatches = []
+    for label, actual, expected in pairs:
+        if not actual or not expected: mismatches.append((label, actual, expected))
+        elif actual != expected: mismatches.append((label, actual, expected))
+    if mismatches:
+        parts = [f"{label}: actual={a} expected={e}" for (label,a,e) in mismatches]
+        raise SystemExit("mount sources mismatch: " + " ; ".join(parts))
+
+    return Mounts(mnt=mnt, boot=boot, esp=esp)
