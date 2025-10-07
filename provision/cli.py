@@ -55,7 +55,7 @@ RESULT_CODES: Dict[str, int] = {
 
 
 def _log_path(name: str) -> str:
-    base = os.path.expanduser("~/kalicrypt/03_LOGS")
+    base = os.path.expanduser("~/rp5/03_LOGS")
     try:
         os.makedirs(base, exist_ok=True)
     except Exception:
@@ -72,7 +72,7 @@ def _emit_result(
     payload: Dict[str, Any] = {"result": kind, "ts": int(time.time())}
     if extra:
         payload.update(extra)
-    append_jsonl(os.path.expanduser("~/kalicrypt/03_LOGS/ete_nvme.jsonl"), payload)
+    append_jsonl(os.path.expanduser("~/rp5/03_LOGS/ete_nvme.jsonl"), payload)
     print(json.dumps(payload, indent=2))
     code = RESULT_CODES.get(kind, 1) if exit_code is None else exit_code
     raise SystemExit(code)
@@ -122,7 +122,7 @@ def _record_result(kind: str, extra: Optional[Dict[str, Any]] = None) -> Dict[st
     payload: Dict[str, Any] = {"result": kind, "ts": int(time.time())}
     if extra:
         payload.update(extra)
-    append_jsonl(os.path.expanduser("~/kalicrypt/03_LOGS/ete_nvme.jsonl"), payload)
+    append_jsonl(os.path.expanduser("~/rp5/03_LOGS/ete_nvme.jsonl"), payload)
     print(json.dumps(payload, indent=2))
     return payload
 

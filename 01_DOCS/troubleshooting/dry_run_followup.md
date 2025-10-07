@@ -9,7 +9,7 @@
 - Confirm the key file exists for the sudo context: `sudo test -s /root/secret.txt`. Using `~/secret.txt` with `sudo` resolves to `/root/secret.txt`; copy it there or pass an absolute path if the file lives elsewhere. The CLI refuses missing or empty files before formatting LUKS.【F:provision/cli.py†L417-L433】
 - Check nothing is holding the NVMe device: `sudo fuser -vm /dev/nvme0n1`. Kill any remaining holders so `parted` and `wipefs` can proceed without interference. The flow will also call `kill_holders`, but clearing blockers now avoids repeated prompts.【F:provision/cli.py†L126-L148】
 - Verify the active root really is `/dev/sda2`: `findmnt /`. If it differs, adjust expectations or rerun `--plan` from the booted system you want copied.
-- Back up the dry-run JSON artifact from `/home/admin/kalicrypt/03_LOGS/` after generating a new plan with the real key file so the stored metadata reflects the file path you will use.
+- Back up the dry-run JSON artifact from `/home/admin/rp5/03_LOGS/` after generating a new plan with the real key file so the stored metadata reflects the file path you will use.
 
 ## Recommended execution order
 1. `sudo python -m provision /dev/nvme0n1 --plan --esp-mb 256 --boot-mb 512 --passphrase-file /root/secret.txt`
