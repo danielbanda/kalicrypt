@@ -53,8 +53,12 @@ def mount_targets(device: str, dry_run: bool=False, destructive: bool=True) -> M
     _mount("/dev/mapper/rp5vg-root", mnt, fstype="ext4", opts=ro_opts)
     _mount(dm.p2, boot, fstype="ext4", opts=ro_opts)
     _mount(dm.p1, esp, fstype="vfat", opts=(ro_opts or ["umask=0077"]))  # keep umask on rw too
+    # Keep the ESP permissions tight even on read-only verification mounts.
+    esp_opts = ["umask=0077"]
+    if ro_opts:
+        esp_opts = ro_opts + esp_opts
+    _mount(dm.p1, esp, fstype="vfat", opts=esp_opts)
     return Mounts(mnt=mnt, boot=boot, esp=esp)
-
 
 def _findmnt_source(path: str) -> str:
     r = run(["findmnt","-no","SOURCE", path], check=False)
