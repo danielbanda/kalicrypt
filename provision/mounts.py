@@ -1,7 +1,33 @@
 """Mount helpers (Phase 5.1)."""
+from __future__ import annotations
+
+import os
+import time
+
 from .model import Mounts
 from .executil import run, udev_settle, trace
 from .devices import probe
+
+def _wait_for_block(path: str) -> None:
+    """Ensure ``path`` exists before we attempt destructive operations."""
+
+    if os.environ.get("PYTEST_CURRENT_TEST"):
+        return
+
+    if os.path.exists(path):
+        return
+
+    deadline = time.time() + 6.0
+    while time.time() < deadline:
+        udev_settle()
+        if os.path.exists(path):
+            return
+        time.sleep(0.5)
+
+    raise SystemExit(
+        f"Expected block device {path} to exist but it did not appear"
+    )
+
 
 def _blkid(path: str) -> str:
     try:
