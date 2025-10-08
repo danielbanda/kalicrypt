@@ -88,7 +88,7 @@ def _announce_log_path() -> str:
     global _LOG_ANNOUNCED
     path = _result_log_path()
     if not _LOG_ANNOUNCED:
-        #print(f"log_path={path}")
+        print(f"log_path={path}", file=sys.stderr)
         try:
             trace("cli.log_path", path=path)
         except Exception:
@@ -125,7 +125,7 @@ def _emit_safety_check(snapshot: Dict[str, Any]) -> None:
         trace("cli.safety_check", **snapshot)
     except Exception:
         pass
-    #print(f"safety_check={json.dumps(snapshot, sort_keys=True)}")
+    print(f"safety_check={json.dumps(snapshot, sort_keys=True)}", file=sys.stderr)
 
 
 def _log_path(name: str) -> str:
@@ -173,7 +173,7 @@ def _emit_version_stamp(meta: Dict[str, Any]) -> Dict[str, Any]:
         enriched["path"] = path
         return enriched
     except Exception:
-        print("version_stamp=<unavailable>")
+        print("version_stamp=<unavailable>", file=sys.stderr)
         enriched = dict(meta)
         enriched["path"] = None
         return enriched
@@ -191,7 +191,7 @@ def _emit_result(
         meta = _emit_version_stamp(_version_metadata())
         payload["version"] = meta
     append_jsonl(_result_log_path(), payload)
-    print(json.dumps(payload, indent=2))
+    print(json.dumps(payload, sort_keys=True, separators=(",", ":")))
     code = RESULT_CODES.get(kind, 1) if exit_code is None else exit_code
     raise SystemExit(code)
 
@@ -243,7 +243,7 @@ def _record_result(kind: str, extra: Optional[Dict[str, Any]] = None) -> Dict[st
     if extra:
         payload.update(extra)
     append_jsonl(_result_log_path(), payload)
-    print(json.dumps(payload, indent=2))
+    print(json.dumps(payload, sort_keys=True, separators=(",", ":")), file=sys.stderr)
     return payload
 
 
@@ -881,10 +881,10 @@ def _main_impl(argv: Optional[list[str]] = None) -> int:  # pragma: no cover - e
                     extra={"why": exc.why, "checks": exc.result},
                 )
             except Exception as exc:  # noqa: BLE001
-                print(f"[WARN] postcheck setup failed: {exc}")
+                print(f"[WARN] postcheck setup failed: {exc}", file=sys.stderr)
 
     except Exception as exc:  # noqa: BLE001
-        print(f"[DIAG] Provisioning error: {exc}")
+        print(f"[DIAG] Provisioning error: {exc}", file=sys.stderr)
         try:
             _log_mounts()
         except Exception:
