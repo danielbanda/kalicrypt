@@ -1,8 +1,9 @@
-
 """Ensure/rebuild/verify initramfs in target root (Phase 2)."""
-import os, re, subprocess
-from .executil import run
+import os
+import re
+import subprocess
 
+from .executil import run
 
 REQUIRED_PACKAGES = ("cryptsetup-initramfs", "lvm2", "initramfs-tools")
 
@@ -92,8 +93,8 @@ def verify(dst_boot_fw: str) -> str:
     if not os.path.exists(cfg):
         # write a safe default that references the newest initrd
         ir = newest_initrd(dst_boot_fw)
-        with open(cfg,'w',encoding='utf-8') as f: f.write(f"initramfs {os.path.basename(ir)} followkernel\n")
-    with open(cfg,'r',encoding='utf-8') as f:
+        with open(cfg, 'w', encoding='utf-8') as f: f.write(f"initramfs {os.path.basename(ir)} followkernel\n")
+    with open(cfg, 'r', encoding='utf-8') as f:
         m = re.search(r'^initramfs\s+([^\s#]+)', f.read(), re.M)
     if not m:
         raise RuntimeError("initramfs: config.txt missing initramfs line")
@@ -110,6 +111,7 @@ def verify(dst_boot_fw: str) -> str:
             "initramfs: missing components in image (%s)" % ", ".join(missing)
         )
     return ir
+
 
 def newest_initrd(dst_boot_fw: str) -> str:
     cands = sorted([p for p in os.listdir(dst_boot_fw) if p.startswith('initramfs')], reverse=True)

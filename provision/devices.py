@@ -2,11 +2,12 @@
 from __future__ import annotations
 
 import json
-from .model import DeviceMap
+
 from .executil import run, udev_settle, trace
+from .model import DeviceMap
 
 
-def probe(device: str, dry_run: bool=False, read_only: bool | None = None) -> DeviceMap:
+def probe(device: str, dry_run: bool = False, read_only: bool | None = None) -> DeviceMap:
     """Probe the target disk layout.
 
     Historically this helper accepted a ``read_only`` flag.  Older call sites
@@ -160,17 +161,21 @@ def probe(device: str, dry_run: bool=False, read_only: bool | None = None) -> De
         root_lv_path=detected_root_mapper,
     )
 
-def swapoff_all(dry_run: bool=False):
-    run(["swapoff","-a"], check=False, dry_run=dry_run)
 
-def holders(dev: str, dry_run: bool=False) -> str:
-    r = run(["fuser","-vm", dev], check=False, dry_run=dry_run)
+def swapoff_all(dry_run: bool = False):
+    run(["swapoff", "-a"], check=False, dry_run=dry_run)
+
+
+def holders(dev: str, dry_run: bool = False) -> str:
+    r = run(["fuser", "-vm", dev], check=False, dry_run=dry_run)
     return r.out
 
-def kill_holders(dev: str, dry_run: bool=False):
-    run(["fuser","-vmk", dev], check=False, dry_run=dry_run)
+
+def kill_holders(dev: str, dry_run: bool = False):
+    run(["fuser", "-vmk", dev], check=False, dry_run=dry_run)
     udev_settle()
 
-def uuid_of(path: str, dry_run: bool=False) -> str:
-    r = run(["blkid","-s","UUID","-o","value", path], check=False, dry_run=dry_run)
+
+def uuid_of(path: str, dry_run: bool = False) -> str:
+    r = run(["blkid", "-s", "UUID", "-o", "value", path], check=False, dry_run=dry_run)
     return (r.out or "").strip()

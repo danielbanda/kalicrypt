@@ -4,9 +4,10 @@ from __future__ import annotations
 import os
 import time
 
-from .model import Mounts
-from .executil import run, udev_settle, trace
 from .devices import probe
+from .executil import run, udev_settle, trace
+from .model import Mounts
+
 
 def _wait_for_block(path: str) -> None:
     """Ensure ``path`` exists before we attempt destructive operations."""
@@ -34,13 +35,13 @@ def _blkid(path: str) -> str:
         udev_settle()
     except Exception:
         pass
-    r = run(["blkid","-s","TYPE","-o","value", path], check=False)
+    r = run(["blkid", "-s", "TYPE", "-o", "value", path], check=False)
     val = (r.out or "").strip()
     if not val:
-        r2 = run(["lsblk","-no","FSTYPE", path], check=False)
+        r2 = run(["lsblk", "-no", "FSTYPE", path], check=False)
         val = (r2.out or "").strip()
     if not val:
-        r3 = run(["file","-sL", path], check=False)
+        r3 = run(["file", "-sL", path], check=False)
         out = ((r3.out or "") + (r3.err or "")).lower()
         if "ext4" in out:
             val = "ext4"
@@ -64,11 +65,11 @@ def _ensure_fs(dev: str, fstype: str, label: str = None):
     if cur == fstype:
         return
     if fstype == "vfat":
-        args = ["mkfs.vfat","-F","32"]
+        args = ["mkfs.vfat", "-F", "32"]
         if label: args += ["-n", label]
         run(args + [dev], check=True, timeout=60.0)
     elif fstype == "ext4":
-        args = ["mkfs.ext4","-F"]
+        args = ["mkfs.ext4", "-F"]
         if label: args += ["-L", label]
         # pre-clean stale signatures and let udev settle
         run(["wipefs", "-a", dev], check=True, timeout=60.0)
@@ -78,15 +79,17 @@ def _ensure_fs(dev: str, fstype: str, label: str = None):
         raise SystemExit(f"Unsupported mkfs type: {fstype}")
     udev_settle()
 
+
 def _mount(dev: str, dirpath: str, opts: list[str] = None):
-    run(["mkdir","-p", dirpath], check=False)
+    run(["mkdir", "-p", dirpath], check=False)
     cmd = ["mount"]
     if opts: cmd += ["-o", ",".join(opts)]
     cmd += [dev, dirpath]
     run(cmd, check=True)
     udev_settle()
 
-def mount_targets(device: str, dry_run: bool=False) -> Mounts:
+
+def mount_targets(device: str, dry_run: bool = False) -> Mounts:
     dm = probe(device, dry_run=dry_run)
     mnt = "/mnt/nvme"
     boot = f"{mnt}/boot"
@@ -97,7 +100,7 @@ def mount_targets(device: str, dry_run: bool=False) -> Mounts:
     _ensure_fs(dm.p2, "ext4", label="boot")
     # Root LV is fixed name
     root_dev = "/dev/mapper/rp5vg-root"
-    _ensure_fs(root_dev, "ext4", label="root" )
+    _ensure_fs(root_dev, "ext4", label="root")
 
     # Mount in correct order
     _mount(root_dev, mnt)
@@ -106,22 +109,22 @@ def mount_targets(device: str, dry_run: bool=False) -> Mounts:
     return Mounts(mnt=mnt, boot=boot, esp=esp)
 
 
-def bind_mounts(mnt: str, dry_run: bool=False):
+def bind_mounts(mnt: str, dry_run: bool = False):
     # Ensure necessary mountpoints exist before bind-mounting
     for sub in ("/dev", "/proc", "/sys", "/run"):
-        run(["mkdir","-p", f"{mnt}{sub}"], check=False, dry_run=dry_run)
+        run(["mkdir", "-p", f"{mnt}{sub}"], check=False, dry_run=dry_run)
     # Bind the live system dirs into the target for chroot operations
-    for p in ("/dev","/proc","/sys","/run"):
+    for p in ("/dev", "/proc", "/sys", "/run"):
         trace("bind_mount", src=p, dst=f"{mnt}{p}")
-        run(["mount","--bind", p, f"{mnt}{p}"], check=False, dry_run=dry_run)
+        run(["mount", "--bind", p, f"{mnt}{p}"], check=False, dry_run=dry_run)
 
 
-def unmount_all(mnt: str, force: bool=True, dry_run: bool=False):
+def unmount_all(mnt: str, force: bool = True, dry_run: bool = False):
     run(["sync"], check=False)
-    for p in ("/proc","/sys","/dev"):
-        run(["umount","-l", f"{mnt}{p}"], check=False)
+    for p in ("/proc", "/sys", "/dev"):
+        run(["umount", "-l", f"{mnt}{p}"], check=False)
     for p in (f"{mnt}/boot/firmware", f"{mnt}/boot", mnt):
-        run(["umount","-l", p], check=False)
+        run(["umount", "-l", p], check=False)
     udev_settle()
     _assert_lsblk_clean(mnt)
 
@@ -160,21 +163,20 @@ def _assert_lsblk_clean(mnt: str) -> None:
     #     )
 
 
-
 def assert_mount_sources(mnt: str, boot: str, esp: str, root_dev: str, boot_dev: str, esp_dev: str):
     def src(path):
-        out = (run(["findmnt","-no","SOURCE", path], check=False).out or "")
+        out = (run(["findmnt", "-no", "SOURCE", path], check=False).out or "")
         # findmnt sometimes prints extra newlines in stacked bind cases; pick the last non-empty line
         lines = [l.strip() for l in out.splitlines() if l.strip()]
         return lines[-1] if lines else ""
 
     def canon(dev):
-        out = (run(["readlink","-f", dev], check=False).out or "").strip()
+        out = (run(["readlink", "-f", dev], check=False).out or "").strip()
         return out if out else dev
 
     def uuid(dev):
         c = canon(dev)
-        r = run(["blkid","-s","UUID","-o","value", c], check=False)
+        r = run(["blkid", "-s", "UUID", "-o", "value", c], check=False)
         txt = (r.out or "").strip()
         return txt
 
@@ -187,7 +189,7 @@ def assert_mount_sources(mnt: str, boot: str, esp: str, root_dev: str, boot_dev:
     pairs = [
         ("root", s_root, root_dev),
         ("boot", s_boot, boot_dev),
-        ("esp",  s_esp,  esp_dev),
+        ("esp", s_esp, esp_dev),
     ]
 
     mismatches = []
@@ -207,7 +209,7 @@ def assert_mount_sources(mnt: str, boot: str, esp: str, root_dev: str, boot_dev:
         raise SystemExit("mount sources mismatch: " + " ; ".join(parts))
 
 
-def mount_targets_safe(device: str, dry_run: bool=False) -> Mounts:
+def mount_targets_safe(device: str, dry_run: bool = False) -> Mounts:
     """
     Read-only, non-destructive mounting for postcheck.
     - Probes device map.
@@ -216,11 +218,15 @@ def mount_targets_safe(device: str, dry_run: bool=False) -> Mounts:
     - Mounts root (ext4), boot (ext4), esp (vfat). Raises on failure.
     """
     dm = probe(device, dry_run=dry_run)
-    mnt = "/mnt/nvme"; boot = f"{mnt}/boot"; esp = f"{boot}/firmware"
-    run(["mkdir","-p", mnt, boot, esp], check=True)
+    mnt = "/mnt/nvme";
+    boot = f"{mnt}/boot";
+    esp = f"{boot}/firmware"
+    run(["mkdir", "-p", mnt, boot, esp], check=True)
     # Settle udev in case previous steps changed mappings
-    try: udev_settle()
-    except Exception: pass
+    try:
+        udev_settle()
+    except Exception:
+        pass
 
     def _try_mount(dev, target, fstype=None, opts=None):
         cmd = ["mount"]

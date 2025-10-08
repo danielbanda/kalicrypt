@@ -1,6 +1,10 @@
 # Recovery helpers (Phase 6)
-import os, tarfile, json
+import json
+import os
+import tarfile
+
 from .executil import run
+
 
 def write_recovery_doc(mnt: str, luks_uuid: str):
     doc = (
@@ -19,6 +23,7 @@ def write_recovery_doc(mnt: str, luks_uuid: str):
     with open(p, 'w', encoding='utf-8') as f:
         f.write(doc)
 
+
 def install_postboot_check(mnt: str):
     script = (
         '#!/bin/sh\n'
@@ -31,7 +36,8 @@ def install_postboot_check(mnt: str):
     os.makedirs(os.path.dirname(dst), exist_ok=True)
     with open(dst, 'w', encoding='utf-8') as f:
         f.write(script)
-    run(['chmod','0755', dst], check=False)
+    run(['chmod', '0755', dst], check=False)
+
 
 def bundle_artifacts(out_path: str, state: dict):
     try:

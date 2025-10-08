@@ -1,5 +1,8 @@
 from __future__ import annotations
-import os, re, json, glob
+
+import os
+import re
+
 
 def _read(path: str) -> str:
     try:
@@ -8,19 +11,23 @@ def _read(path: str) -> str:
     except FileNotFoundError:
         return ""
 
+
 def _require(path: str):
     if not os.path.exists(path):
         raise RuntimeError(f"missing: {path}")
+
 
 def _assert_eq(label: str, a: str, b: str):
     if a != b:
         raise RuntimeError(f"{label} mismatch: {a} != {b}")
 
+
 def _assert_contains(label: str, text: str, needle: str):
     if needle not in text:
         raise RuntimeError(f"{label} missing expected token: {needle}")
 
-def cleanup_pycache(mnt: str, subdir: str="home/admin/rp5"):
+
+def cleanup_pycache(mnt: str, subdir: str = "home/admin/rp5"):
     root = os.path.join(mnt, subdir)
     if not os.path.exists(root):
         return {"removed_dirs": 0, "removed_files": 0}
@@ -55,7 +62,8 @@ def cleanup_pycache(mnt: str, subdir: str="home/admin/rp5"):
                     pass
     return {"removed_dirs": removed_dirs, "removed_files": removed_files}
 
-def run_postcheck(mnt: str, luks_uuid: str, p1_uuid: str|None=None, verbose: bool=False) -> dict:
+
+def run_postcheck(mnt: str, luks_uuid: str, p1_uuid: str | None = None, verbose: bool = False) -> dict:
     res = {"checks": [], "ok": True}
 
     # 1) crypttab UUID
@@ -77,7 +85,7 @@ def run_postcheck(mnt: str, luks_uuid: str, p1_uuid: str|None=None, verbose: boo
     res["checks"].append({"cmdline": True})
 
     # 3) initramfs and kernel images present
-    bootdir = os.path.join(mnt) # temp fix
+    bootdir = os.path.join(mnt)  # temp fix
     _require(bootdir)
     has_initramfs = any(name.startswith("initrd") or name.endswith(".img") for name in os.listdir(bootdir))
     if not has_initramfs:
@@ -97,5 +105,6 @@ def run_postcheck(mnt: str, luks_uuid: str, p1_uuid: str|None=None, verbose: boo
 
     res["ok"] = True
     return res
+
 
 POSTCHECK_OK = "POSTCHECK_OK"

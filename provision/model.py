@@ -1,6 +1,7 @@
 from dataclasses import dataclass
 from typing import Optional
 
+
 @dataclass
 class Flags:
     plan: bool = False
@@ -10,12 +11,14 @@ class Flags:
     tpm_keyscript: bool = False
     assume_yes: bool = False
 
+
 @dataclass
 class ProvisionPlan:
     device: str
     esp_mb: int = 256
     boot_mb: int = 512
     passphrase_file: Optional[str] = None
+
 
 @dataclass
 class DeviceMap:
@@ -27,6 +30,7 @@ class DeviceMap:
     vg: str = "rp5vg"
     lv: str = "root"
     root_lv_path: str | None = None
+
 
 @dataclass
 class Mounts:

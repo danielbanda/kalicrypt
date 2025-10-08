@@ -60,7 +60,6 @@ def test_with_backoff_eventually_succeeds(monkeypatch):
 
     assert executil.with_backoff(flaky, tries=5, base=0.001, max_delay=0.001) == "ok"
 
-
     def always_fail():
         raise RuntimeError("boom")
 

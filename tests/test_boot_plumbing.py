@@ -1,5 +1,3 @@
-import os
-
 import pytest
 
 from provision.boot_plumbing import (
@@ -64,6 +62,7 @@ def test_write_crypttab_matches_template(tmp_path):
 
     contents = read(etc_dir / "crypttab")
     assert contents == "cryptroot UUID=uuid-luks  /home/admin/secret.txt\n"
+
 
 def test_resolve_root_mapper_defaults():
     assert _resolve_root_mapper(None, None, None) == "/dev/mapper/rp5vg-root"

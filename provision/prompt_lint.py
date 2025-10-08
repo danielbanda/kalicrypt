@@ -1,16 +1,19 @@
 #!/usr/bin/env python3
-import argparse, sys, os, re, json
+import argparse
+import sys
 from pathlib import Path
 
 BANNED = {
-    "ensure","crucial","vital","nestled","uncover","journey","embark","unleash","dive",
-    "realm","discover","delve","plethora","whether","indulge","more than just","not just",
-    "look no further","landscape","navigate","daunting","both style","tapestry","unique blend",
-    "blend","enhancing","game changer","stand out","stark","contrast"
+    "ensure", "crucial", "vital", "nestled", "uncover", "journey", "embark", "unleash", "dive",
+    "realm", "discover", "delve", "plethora", "whether", "indulge", "more than just", "not just",
+    "look no further", "landscape", "navigate", "daunting", "both style", "tapestry", "unique blend",
+    "blend", "enhancing", "game changer", "stand out", "stark", "contrast"
 }
 
+
 def is_text(path: Path) -> bool:
-    return path.suffix.lower() in {".md",".mdx",".txt",".rst",".ini",".conf",".cfg"}
+    return path.suffix.lower() in {".md", ".mdx", ".txt", ".rst", ".ini", ".conf", ".cfg"}
+
 
 def scan_file(p: Path, required_sections):
     text = p.read_text(encoding="utf-8", errors="ignore")
@@ -25,6 +28,7 @@ def scan_file(p: Path, required_sections):
         if sec.lower() not in low:
             issues.append(f"MISSING SECTION: '{sec}'")
     return issues
+
 
 def main():
     ap = argparse.ArgumentParser()
@@ -52,6 +56,7 @@ def main():
         for i in iss:
             print(f"      * {i}")
     sys.exit(1)
+
 
 if __name__ == "__main__":
     main()

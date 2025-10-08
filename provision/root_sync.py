@@ -1,44 +1,48 @@
-
 """Root filesystem sync to target (Phase 5.2)."""
 import shutil
+
 from .executil import run
 
 
 def _parse_rsync_stats(text: str) -> dict:
-    if not isinstance(text, str): 
+    if not isinstance(text, str):
         return {}
     stats = {}
     for line in text.splitlines():
         line = line.strip()
-        if not line: 
+        if not line:
             continue
         # Simple, robust parses
         if line.lower().startswith("number of files transferred:"):
-            try: stats["files_transferred"] = int(line.split(":")[1].strip().replace(",",""))
-            except: pass
+            try:
+                stats["files_transferred"] = int(line.split(":")[1].strip().replace(",", ""))
+            except:
+                pass
         elif line.lower().startswith("total file size:"):
-            stats["total_file_size"] = line.split(":",1)[1].strip()
+            stats["total_file_size"] = line.split(":", 1)[1].strip()
         elif line.lower().startswith("total transferred file size:"):
-            stats["transferred_size"] = line.split(":",1)[1].strip()
+            stats["transferred_size"] = line.split(":", 1)[1].strip()
         elif line.lower().startswith("literal data:"):
-            stats["literal_data"] = line.split(":",1)[1].strip()
+            stats["literal_data"] = line.split(":", 1)[1].strip()
         elif line.lower().startswith("matched data:"):
-            stats["matched_data"] = line.split(":",1)[1].strip()
+            stats["matched_data"] = line.split(":", 1)[1].strip()
         elif line.lower().startswith("file list size:"):
-            stats["file_list_size"] = line.split(":",1)[1].strip()
+            stats["file_list_size"] = line.split(":", 1)[1].strip()
         elif line.lower().startswith("total bytes sent:"):
-            stats["bytes_sent"] = line.split(":",1)[1].strip()
+            stats["bytes_sent"] = line.split(":", 1)[1].strip()
         elif line.lower().startswith("total bytes received:"):
-            stats["bytes_received"] = line.split(":",1)[1].strip()
+            stats["bytes_received"] = line.split(":", 1)[1].strip()
         elif line.lower().startswith("sent ") and " bytes  received " in line and " bytes/sec" in line:
             stats["throughput_line"] = line
         elif line.lower().startswith("speedup is "):
-            stats["speedup"] = line.split(" ",2)[2].strip()
+            stats["speedup"] = line.split(" ", 2)[2].strip()
     return stats
+
 
 EXCLUDES = ["/proc", "/sys", "/dev", "/run", "/mnt", "/media", "/tmp"]
 
-def rsync_root(dst_mnt: str, dry_run: bool=False, timeout_sec: int = 7200, exclude_boot: bool = False):
+
+def rsync_root(dst_mnt: str, dry_run: bool = False, timeout_sec: int = 7200, exclude_boot: bool = False):
     dst = dst_mnt.rstrip("/") + "/"
     rsync_path = shutil.which("rsync")
     if rsync_path:

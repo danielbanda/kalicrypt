@@ -1,5 +1,4 @@
 import os
-from pathlib import Path
 
 import pytest
 
@@ -42,6 +41,7 @@ def test_assert_essentials(tmp_path):
     (tmp_path / "start4.elf").unlink()
     with pytest.raises(RuntimeError):
         firmware.assert_essentials(str(tmp_path))
+
 
 def test_populate_esp_fallback_to_cp(monkeypatch, tmp_path):
     src = tmp_path / "src"

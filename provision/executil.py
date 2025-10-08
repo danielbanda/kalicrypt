@@ -1,10 +1,15 @@
-
 """Lightweight subprocess wrapper and dry-run hook (skeleton)."""
+import datetime as _dt
+import json
+import os
+import shlex
+import subprocess
+import time
 from typing import Sequence
-import subprocess, shlex, time, os, json, datetime as _dt
 
 LOG_DIRS = ["/var/log/rp5", "/tmp/rp5-logs"]
 LOG_PATH = None
+
 
 def _ensure_logger():
     global LOG_PATH
@@ -20,23 +25,28 @@ def _ensure_logger():
     LOG_PATH = None
     return None
 
-def _log_event(kind:str, cmd:list[str], rc:int=None, out:str=None, err:str=None, dur:float=None):
-    ts = _dt.datetime.utcnow().isoformat()+"Z"
-    line = {"ts":ts, "kind":kind, "cmd":cmd, "rc":rc, "dur":dur, "out":out, "err":err}
+
+def _log_event(kind: str, cmd: list[str], rc: int = None, out: str = None, err: str = None, dur: float = None):
+    ts = _dt.datetime.utcnow().isoformat() + "Z"
+    line = {"ts": ts, "kind": kind, "cmd": cmd, "rc": rc, "dur": dur, "out": out, "err": err}
     path = _ensure_logger()
     try:
         if path:
             with open(path, "a", encoding="utf-8") as f:
-                f.write(json.dumps(line)+"\n")
+                f.write(json.dumps(line) + "\n")
     except Exception:
         pass
+
+
 class Result:
-    def __init__(self, rc:int, out:str, err:str, duration:float):
+    def __init__(self, rc: int, out: str, err: str, duration: float):
         self.rc, self.out, self.err, self.duration = rc, out, err, duration
 
+
 # --- RP5 TRACE LOGGING (default-enabled until ETE is ready) ---
-LEVELS = {"TRACE":10,"INFO":20,"WARN":30,"ERROR":40,"NONE":100}
+LEVELS = {"TRACE": 10, "INFO": 20, "WARN": 30, "ERROR": 40, "NONE": 100}
 LOG_LEVEL = os.environ.get("RP5_LOG_LEVEL", "TRACE").upper()
+
 
 def _write_jsonl(obj: dict):
     path = _ensure_logger()
@@ -46,6 +56,7 @@ def _write_jsonl(obj: dict):
                 f.write(json.dumps(obj) + "\n")
     except Exception:
         pass
+
 
 def log(level: str, event: str, **fields):
     lvl = LEVELS.get(level.upper(), 100)
@@ -57,11 +68,14 @@ def log(level: str, event: str, **fields):
     rec.update(fields)
     _write_jsonl(rec)
 
+
 def trace(event: str, **fields):
     log("TRACE", event, **fields)
+
+
 # --- end TRACE block ---
 
-def run(cmd: Sequence[str], check: bool=True, dry_run: bool=False, timeout: float = 60.0, env: dict | None = None) -> Result:
+def run(cmd: Sequence[str], check: bool = True, dry_run: bool = False, timeout: float = 60.0, env: dict | None = None) -> Result:
     # TRACE: log command start
     try:
         trace('exec.start', cmd=list(cmd))
@@ -78,7 +92,7 @@ def run(cmd: Sequence[str], check: bool=True, dry_run: bool=False, timeout: floa
         proc = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout, env=env2)
     except subprocess.TimeoutExpired as e:
         try:
-            subprocess.run(["udevadm","settle"], check=False)
+            subprocess.run(["udevadm", "settle"], check=False)
         except Exception:
             pass
         env2 = (env or os.environ).copy()
@@ -94,9 +108,10 @@ def run(cmd: Sequence[str], check: bool=True, dry_run: bool=False, timeout: floa
         raise subprocess.CalledProcessError(proc.returncode, cmd, proc.stdout, proc.stderr)
     return Result(proc.returncode, proc.stdout, proc.stderr, dur)
 
+
 def udev_settle():
     try:
-        subprocess.run(["udevadm","settle"], check=False)
+        subprocess.run(["udevadm", "settle"], check=False)
     except Exception:
         pass
 
@@ -115,7 +130,7 @@ def with_backoff(fn, tries: int = 3, base: float = 0.5, max_delay: float = 4.0):
     raise last
 
 
-def append_jsonl(path:str, obj:dict):
+def append_jsonl(path: str, obj: dict):
     try:
         os.makedirs(os.path.dirname(path), exist_ok=True)
         with open(path, "a", encoding="utf-8") as f:

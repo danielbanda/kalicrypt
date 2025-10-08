@@ -62,6 +62,7 @@ def test_rsync_root_partial_warning(monkeypatch):
     assert isinstance(res, subprocess.CalledProcessError)
     assert res.returncode == 23
 
+
 def test_rsync_with_fallback(monkeypatch, tmp_path):
     calls = {"ran": False}
 

@@ -1,5 +1,8 @@
-
-import os, subprocess, json, shlex, re, glob
+import glob
+import os
+import re
+import shlex
+import subprocess
 
 _PRIVILEGED_BINARIES = {"cryptsetup"}
 
@@ -29,6 +32,7 @@ def _run(cmd, check=False):
         "err": proc.stderr.strip(),
         "ok": (proc.returncode == 0) if check else True,
     }
+
 
 def _read(path):
     try:
@@ -82,12 +86,12 @@ def _uuid_of(device: str) -> str:
 
 
 def verify_sources(
-    root_mount: str,
-    boot_mount: str,
-    esp_mount: str,
-    expected_root: str,
-    expected_boot: str,
-    expected_esp: str,
+        root_mount: str,
+        boot_mount: str,
+        esp_mount: str,
+        expected_root: str,
+        expected_boot: str,
+        expected_esp: str,
 ) -> dict:
     result = {"ok": True, "sources": {}}
     checks = (
@@ -111,12 +115,12 @@ def verify_sources(
 
 
 def verify_fs_and_uuid(
-    p1: str,
-    p2: str,
-    p3: str,
-    exp_uuid_p1: str | None = None,
-    exp_uuid_p2: str | None = None,
-    exp_uuid_luks: str | None = None,
+        p1: str,
+        p2: str,
+        p3: str,
+        exp_uuid_p1: str | None = None,
+        exp_uuid_p2: str | None = None,
+        exp_uuid_luks: str | None = None,
 ) -> dict:
     result = {
         "ok": True,
@@ -150,11 +154,11 @@ def verify_fs_and_uuid(
 
 
 def verify_triplet(
-    mnt_root: str,
-    esp_subdir: str,
-    vg_name: str,
-    lv_name: str,
-    expected_luks_uuid: str | None = None,
+        mnt_root: str,
+        esp_subdir: str,
+        vg_name: str,
+        lv_name: str,
+        expected_luks_uuid: str | None = None,
 ) -> dict:
     result = {
         "ok": True,
@@ -197,6 +201,7 @@ def verify_triplet(
     result["initramfs"] = {"matches": initramfs_matches}
 
     return result
+
 
 def nvme_boot_verification(device, esp_mb=None, boot_mb=None, passphrase_file=None, mnt_root="/mnt/nvme", mnt_esp="/mnt/esp"):
     res = {"steps": [], "ok": True}

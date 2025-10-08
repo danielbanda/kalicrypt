@@ -1,7 +1,6 @@
-
 """Write fstab/crypttab/cmdline and validate (Phase 2)."""
-import os, re, json, subprocess
-from .executil import run
+import os
+
 
 def write_fstab(mnt: str, p1_uuid: str, p2_uuid: str):
     fstab = os.path.join(mnt, 'etc/fstab')
@@ -20,7 +19,8 @@ def write_fstab(mnt: str, p1_uuid: str, p2_uuid: str):
         except Exception:
             pass
 
-def write_crypttab(mnt: str, luks_uuid: str, passfile: str|None, keyscript_path: str|None=None):
+
+def write_crypttab(mnt: str, luks_uuid: str, passfile: str | None, keyscript_path: str | None = None):
     ct = os.path.join(mnt, 'etc/crypttab')
     os.makedirs(os.path.dirname(ct), exist_ok=True)
     key = passfile if passfile else 'none'
@@ -30,9 +30,11 @@ def write_crypttab(mnt: str, luks_uuid: str, passfile: str|None, keyscript_path:
     with open(ct, 'w', encoding='utf-8') as f:
         f.write(line)
         try:
-            f.flush(); os.fsync(f.fileno())
+            f.flush()
+            os.fsync(f.fileno())
         except Exception:
             pass
+
 
 def _resolve_root_mapper(root_mapper: str | None, vg: str | None, lv: str | None) -> str:
     if root_mapper and root_mapper.strip():
@@ -43,11 +45,11 @@ def _resolve_root_mapper(root_mapper: str | None, vg: str | None, lv: str | None
 
 
 def write_cmdline(
-    dst_boot_fw: str,
-    luks_uuid: str,
-    root_mapper: str | None = None,
-    vg: str | None = None,
-    lv: str | None = None,
+        dst_boot_fw: str,
+        luks_uuid: str,
+        root_mapper: str | None = None,
+        vg: str | None = None,
+        lv: str | None = None,
 ):
     p = os.path.join(dst_boot_fw, 'cmdline.txt')
     mapper_path = _resolve_root_mapper(root_mapper, vg, lv)
@@ -75,10 +77,10 @@ def write_cmdline(
 
 
 def assert_cmdline_uuid(dst_boot_fw: str, luks_uuid: str, root_mapper: str | None = None):
-    p = os.path.join(dst_boot_fw,'cmdline.txt')
+    p = os.path.join(dst_boot_fw, 'cmdline.txt')
     if not os.path.isfile(p):
         raise RuntimeError('cmdline.txt missing')
-    txt = open(p,'r',encoding='utf-8').read()
+    txt = open(p, 'r', encoding='utf-8').read()
     if f'cryptdevice=UUID={luks_uuid}' not in txt:
         raise RuntimeError('cmdline.txt cryptdevice UUID mismatch')
     mapper_path = _resolve_root_mapper(root_mapper, None, None)

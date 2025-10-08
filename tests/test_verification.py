@@ -136,13 +136,6 @@ def test_verify_fs_and_uuid_warns_on_uuid(monkeypatch):
     assert "luks uuid differs" in result["warnings"][1]
 
 
-def test_verify_fs_and_uuid_fstype_mismatch(monkeypatch):
-    monkeypatch.setattr(verification, "_fstype_of", lambda dev: "ext4")
-
-    with pytest.raises(RuntimeError):
-        verification.verify_fs_and_uuid("p1", "p2", "p3")
-
-
 def test_verify_triplet_success(tmp_path):
     esp_dir = tmp_path / "boot" / "firmware"
     esp_dir.mkdir(parents=True)

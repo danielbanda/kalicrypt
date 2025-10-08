@@ -1,5 +1,3 @@
-import os
-import time
 from types import SimpleNamespace
 
 import pytest
@@ -210,6 +208,7 @@ def test_mount_targets_safe_raises_on_failed_mount(monkeypatch):
 
     assert "mount failed" in str(excinfo.value)
     assert any(cmd for cmd in observed if cmd and cmd[0] == "mount")
+
 
 def test_wait_for_block_behaviour(monkeypatch):
     monkeypatch.setenv("PYTEST_CURRENT_TEST", "1")

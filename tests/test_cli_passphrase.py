@@ -32,13 +32,13 @@ class PassphrasePathTests(unittest.TestCase):
             raise RuntimeError("emit")
 
         with mock.patch.dict(os.environ, {"HOME": "/home/admin"}), \
-            mock.patch("provision.cli._plan_payload", side_effect=fake_plan_payload), \
-            mock.patch("provision.cli._write_json_artifact", return_value="/tmp/plan.json"), \
-            mock.patch("provision.cli._emit_result", side_effect=fake_emit_result), \
-            mock.patch("provision.cli.safety.guard_not_live_disk", return_value=(True, "")), \
-            mock.patch("provision.cli._same_underlying_disk", return_value=False), \
-            mock.patch("provision.cli.os.path.exists", return_value=True), \
-            mock.patch("provision.cli.os.popen") as popen_mock:
+                mock.patch("provision.cli._plan_payload", side_effect=fake_plan_payload), \
+                mock.patch("provision.cli._write_json_artifact", return_value="/tmp/plan.json"), \
+                mock.patch("provision.cli._emit_result", side_effect=fake_emit_result), \
+                mock.patch("provision.cli.safety.guard_not_live_disk", return_value=(True, "")), \
+                mock.patch("provision.cli._same_underlying_disk", return_value=False), \
+                mock.patch("provision.cli.os.path.exists", return_value=True), \
+                mock.patch("provision.cli.os.popen") as popen_mock:
             popen_mock.return_value.read.return_value = "/dev/sda2"
             with self.assertRaisesRegex(RuntimeError, "emit"):
                 cli.main([

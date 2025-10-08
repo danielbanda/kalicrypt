@@ -11,6 +11,7 @@ import sys
 import time
 from typing import Any, Dict, Optional
 
+from . import safety
 from .boot_plumbing import (
     assert_cmdline_uuid,
     assert_crypttab_uuid,
@@ -18,7 +19,6 @@ from .boot_plumbing import (
     write_crypttab,
     write_fstab,
 )
-from . import safety
 from .devices import kill_holders, probe, swapoff_all, uuid_of
 from .executil import append_jsonl, run, trace, udev_settle
 from .firmware import assert_essentials, populate_esp
@@ -34,8 +34,8 @@ from .luks_lvm import (
 from .model import Flags, ProvisionPlan
 from .mounts import mount_targets_safe, bind_mounts, mount_targets, unmount_all
 from .partitioning import apply_layout, verify_layout
-from .postcheck import cleanup_pycache, run_postcheck
 from .postboot import install_postboot_check as install_postboot_heartbeat
+from .postcheck import cleanup_pycache, run_postcheck
 from .recovery import write_recovery_doc
 from .root_sync import rsync_root
 
@@ -73,9 +73,9 @@ def _log_path(name: str) -> str:
 
 
 def _emit_result(
-    kind: str,
-    extra: Optional[Dict[str, Any]] = None,
-    exit_code: Optional[int] = None,
+        kind: str,
+        extra: Optional[Dict[str, Any]] = None,
+        exit_code: Optional[int] = None,
 ) -> None:
     payload: Dict[str, Any] = {"result": kind, "ts": int(time.time())}
     if extra:
@@ -298,11 +298,11 @@ def _rsync_summarize(out_text: str, max_items: int = 30) -> Dict[str, Any]:
         line
         for line in lines
         if line.strip()
-        and (
-            line.startswith("deleting")
-            or line.startswith("*deleting")
-            or line[0] in {">", "*", "."}
-        )
+           and (
+                   line.startswith("deleting")
+                   or line.startswith("*deleting")
+                   or line[0] in {">", "*", "."}
+           )
     ]
     sample = itemized[:max_items]
     numbers = [line for line in lines if line.startswith("Number of ")]
@@ -634,8 +634,8 @@ def main(argv: Optional[list[str]] = None) -> int:  # pragma: no cover - exercis
 
     format_luks(dm.p3, passphrase_file)
     open_luks(dm.p3, dm.luks_name, passphrase_file)
-    run(["vgchange","-ay", dm.vg], check=False)
-    run(["dmsetup","mknodes"], check=False)
+    run(["vgchange", "-ay", dm.vg], check=False)
+    run(["dmsetup", "mknodes"], check=False)
     # Wait for /dev/mapper/rp5vg-root to appear
     for _ in range(8):
         if os.path.exists(f"/dev/mapper/{dm.vg}-{dm.lv}"):
