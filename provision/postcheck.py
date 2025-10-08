@@ -71,7 +71,8 @@ def run_postcheck(mnt: str, luks_uuid: str, p1_uuid: str | None = None, verbose:
     res["checks"].append({"crypttab": True, "uuid": crypt_uuid})
 
     # 2) boot firmware/initramfs verification
-    boot_fw = os.path.join(mnt, "boot", "firmware")
+    #boot_fw = os.path.join(mnt, "boot", "firmware")
+    boot_fw = os.path.join(mnt)
     boot_surface = verify_boot_surface(boot_fw, luks_uuid=luks_uuid)
     res["checks"].append({"boot_surface": boot_surface})
     if not boot_surface.get("ok", False):
