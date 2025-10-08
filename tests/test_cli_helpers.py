@@ -92,10 +92,18 @@ def test_plan_payload_collects_snapshot(monkeypatch):
     plan = cli.ProvisionPlan("/dev/nvme0n1", 256, 512, "/tmp/pass")
     flags = cli.Flags(plan=True, dry_run=False, skip_rsync=False, do_postcheck=False, tpm_keyscript=False, assume_yes=False)
 
-    payload = cli._plan_payload(plan, flags, "/dev/root")
+    safety_snapshot = {
+        "root_src": "/dev/root",
+        "boot_src": "/boot",
+        "target_device": plan.device,
+        "target_pkname": "nvme0n",
+    }
+
+    payload = cli._plan_payload(plan, flags, "/dev/root", safety_snapshot)
     assert payload["plan"]["device"] == "/dev/nvme0n1"
     assert payload["state"]["holders"] == ["holder1", "holder2"]
     assert payload["steps"]
+    assert payload["safety_check"] == safety_snapshot
 
 
 def test_pre_sync_snapshot_aggregates(monkeypatch):

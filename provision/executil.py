@@ -7,7 +7,12 @@ import subprocess
 import time
 from typing import Sequence
 
-LOG_DIRS = ["~/rp5/03_LOGS", "/var/log/rp5", "/tmp/rp5-logs"]
+LOG_DIRS = [
+    "/home/admin/rp5/03_LOGS",
+    "~/rp5/03_LOGS",
+    "/var/log/rp5",
+    "/tmp/rp5-logs",
+]
 LOG_PATH = None
 
 

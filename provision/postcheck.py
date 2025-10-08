@@ -56,7 +56,28 @@ def cleanup_pycache(mnt: str, subdir: str = "home/admin/rp5"):
 
 
 def run_postcheck(mnt: str, luks_uuid: str, p1_uuid: str | None = None, verbose: bool = False) -> dict:
-    res = {"checks": [], "ok": True}
+    res = {"checks": [], "ok": True, "installed": {}}
+
+    recovery_host = os.path.join(mnt, "root", "RP5_RECOVERY.md")
+    recovery_target = "/root/RP5_RECOVERY.md"
+    if not os.path.isfile(recovery_host):
+        raise RuntimeError(f"recovery doc missing at {recovery_host}")
+    res["installed"]["recovery_doc"] = {
+        "host_path": recovery_host,
+        "target_path": recovery_target,
+        "exists": True,
+    }
+
+    heartbeat_script = os.path.join(mnt, "usr", "local", "sbin", "rp5-postboot-check")
+    heartbeat_unit = os.path.join(mnt, "etc", "systemd", "system", "rp5-postboot.service")
+    heartbeat_ok = os.path.isfile(heartbeat_script) and os.path.isfile(heartbeat_unit)
+    res["installed"]["heartbeat"] = {
+        "script": heartbeat_script,
+        "unit": heartbeat_unit,
+        "exists": heartbeat_ok,
+    }
+    if not heartbeat_ok:
+        raise RuntimeError("postboot heartbeat not fully installed")
 
     # 1) crypttab UUID
     ct_path = os.path.join(mnt, "etc/crypttab")

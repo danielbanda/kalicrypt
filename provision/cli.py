@@ -89,9 +89,16 @@ def _announce_log_path() -> str:
     global _LOG_ANNOUNCED
     path = _result_log_path()
     if not _LOG_ANNOUNCED:
-        # print(f"log_path={path}", file=sys.stderr)
+        if path:
+            print(f"log_path={path}")
+            try:
+                trace("cli.log_path", path=path)
+            except Exception:
+                pass
+        else:
+            print("log_path=<unavailable>")
         try:
-            trace("cli.log_path", path=path)
+            sys.stdout.flush()
         except Exception:
             pass
         _LOG_ANNOUNCED = True
@@ -126,7 +133,11 @@ def _emit_safety_check(snapshot: Dict[str, Any]) -> None:
         trace("cli.safety_check", **snapshot)
     except Exception:
         pass
-    #print(f"safety_check={json.dumps(snapshot, sort_keys=True)}", file=sys.stderr)
+    try:
+        print(f"safety_check={json.dumps(snapshot, sort_keys=True)}")
+        sys.stdout.flush()
+    except Exception:
+        pass
 
 
 def _log_path(name: str) -> str:
@@ -280,7 +291,12 @@ def _planned_steps(flags: Flags) -> list[str]:
     return steps
 
 
-def _plan_payload(plan: ProvisionPlan, flags: Flags, root_src: str) -> Dict[str, Any]:
+def _plan_payload(
+    plan: ProvisionPlan,
+    flags: Flags,
+    root_src: str,
+    safety_snapshot: Dict[str, Any],
+) -> Dict[str, Any]:
     dm = probe(plan.device, dry_run=True)
     state: Dict[str, Any] = {"root_source": root_src}
     holders = _holders_snapshot(plan.device)
@@ -330,6 +346,7 @@ def _plan_payload(plan: ProvisionPlan, flags: Flags, root_src: str) -> Dict[str,
             "requested": flags.do_postcheck,
             **({"offer": "--do-postcheck"} if not flags.do_postcheck else {}),
         },
+        "safety_check": safety_snapshot,
         "timestamp": int(time.time()),
     }
     return payload
@@ -463,6 +480,55 @@ def _rsync_summarize(out_text: str, max_items: int = 30) -> Dict[str, Any]:
     }
 
 
+def _timing_from_packages(meta: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+    if not meta:
+        return {}
+    timing: Dict[str, Any] = {}
+    update = meta.get("update") or {}
+    if update:
+        timing["update_sec"] = update.get("duration_sec")
+    packages = []
+    for entry in meta.get("installs", []) or []:
+        packages.append(
+            {
+                "package": entry.get("package"),
+                "check_sec": entry.get("check_duration_sec"),
+                "install_sec": entry.get("install_duration_sec"),
+            }
+        )
+    if packages:
+        timing["packages"] = packages
+    if meta.get("retries"):
+        timing["retries"] = meta.get("retries")
+    return timing
+
+
+def _timing_from_rebuild(meta: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+    if not meta:
+        return {}
+    timing: Dict[str, Any] = {}
+    attempts = []
+    for attempt in meta.get("attempts", []) or []:
+        attempts.append(
+            {
+                "mode": attempt.get("mode"),
+                "rc": attempt.get("rc"),
+                "duration_sec": attempt.get("duration_sec"),
+            }
+        )
+    if attempts:
+        timing["attempts"] = attempts
+    copy_meta = meta.get("copy") or {}
+    if copy_meta:
+        timing["copy_sec"] = copy_meta.get("duration_sec")
+    list_meta = meta.get("list") or {}
+    if list_meta:
+        timing["list_sec"] = list_meta.get("duration_sec")
+    if meta.get("retries"):
+        timing["retries"] = meta.get("retries")
+    return timing
+
+
 def pre_cleanup(device: str) -> None:
     try:
         swapoff_all()
@@ -592,7 +658,13 @@ def _require_passphrase(path: Optional[str], context: str = "default") -> str:
     return normalized
 
 
-def _run_postcheck_only(plan: ProvisionPlan, flags: Flags, passphrase_file: str) -> None:  # pragma: no cover - hardware flow
+def _run_postcheck_only(
+    plan: ProvisionPlan,
+    flags: Flags,
+    passphrase_file: str,
+    safety_snapshot: Dict[str, Any],
+    log_path: Optional[str],
+) -> None:  # pragma: no cover - hardware flow
     dm = probe(plan.device)
     mounts = None
     open_luks(dm.p3, dm.luks_name, passphrase_file)
@@ -607,7 +679,7 @@ def _run_postcheck_only(plan: ProvisionPlan, flags: Flags, passphrase_file: str)
             raise RuntimeError("could not determine LUKS UUID")
 
         heartbeat_meta = install_postboot_heartbeat(mounts.mnt)
-        write_recovery_doc(mounts.mnt, luks_uuid)
+        recovery_meta = write_recovery_doc(mounts.mnt, luks_uuid)
 
         cleanup = cleanup_pycache(mounts.mnt)
         try:
@@ -632,12 +704,14 @@ def _run_postcheck_only(plan: ProvisionPlan, flags: Flags, passphrase_file: str)
 
         out = {
             "flags": vars(flags),
+            "log_path": log_path or _result_log_path(),
+            "safety_check": safety_snapshot,
             "postcheck": {
                 "device": plan.device,
                 "luks_uuid": luks_uuid,
                 "installed": {
                     "heartbeat": heartbeat_meta,
-                    "recovery_doc": "/root/RP5_RECOVERY.md",
+                    "recovery_doc": recovery_meta,
                 },
                 "cleanup": cleanup,
                 "report": postcheck,
@@ -679,7 +753,7 @@ def _main_impl(argv: Optional[list[str]] = None) -> int:  # pragma: no cover - e
     mode = "plan" if args.plan else ("dry" if args.dry_run else "full")
     sync_performed = not args.skip_rsync
 
-    _announce_log_path()
+    log_path = _announce_log_path()
 
     try:
         trace(
@@ -716,6 +790,7 @@ def _main_impl(argv: Optional[list[str]] = None) -> int:  # pragma: no cover - e
         _emit_result("FAIL_INVALID_DEVICE", extra={"device": plan.device})
 
     safety_snapshot = _safety_snapshot(plan.device)
+    _emit_safety_check(safety_snapshot)
 
     ok, reason = safety.guard_not_live_disk(plan.device)
     if not ok:
@@ -731,8 +806,6 @@ def _main_impl(argv: Optional[list[str]] = None) -> int:  # pragma: no cover - e
             extra["holders"] = _holders_snapshot(plan.device)
         _emit_result("FAIL_LIVE_DISK_GUARD", extra=extra)
 
-    _emit_safety_check(safety_snapshot)
-
     if mode == "full" and args.skip_rsync:
         _emit_result(
             "FAIL_RSYNC_SKIPPED_FULLRUN",
@@ -741,10 +814,10 @@ def _main_impl(argv: Optional[list[str]] = None) -> int:  # pragma: no cover - e
 
     if flags.do_postcheck and not flags.plan and not flags.dry_run:
         passphrase_file = _require_passphrase(plan.passphrase_file, context="postcheck-only")
-        _run_postcheck_only(plan, flags, passphrase_file)
+        _run_postcheck_only(plan, flags, passphrase_file, safety_snapshot, log_path)
 
     if flags.plan or flags.dry_run:
-        plan_payload = _plan_payload(plan, flags, root_src)
+        plan_payload = _plan_payload(plan, flags, root_src, safety_snapshot)
         artifact_path = _write_json_artifact("plan", plan_payload)
         result_kind = "PLAN_OK" if flags.plan else "DRYRUN_OK"
         result_payload = dict(plan_payload)
@@ -792,7 +865,7 @@ def _main_impl(argv: Optional[list[str]] = None) -> int:  # pragma: no cover - e
     postcheck_report: Optional[Dict[str, Any]] = None
     cleanup_stats: Optional[Dict[str, Any]] = None
     heartbeat_meta: Optional[Dict[str, Any]] = None
-    recovery_doc_path: Optional[str] = None
+    recovery_doc_meta: Optional[Dict[str, Any]] = None
     root_mapper_path: Optional[str] = None
     packages_meta: Optional[Dict[str, Any]] = None
     rebuild_meta: Optional[Dict[str, Any]] = None
@@ -867,8 +940,7 @@ def _main_impl(argv: Optional[list[str]] = None) -> int:  # pragma: no cover - e
         if flags.do_postcheck:
             try:
                 heartbeat_meta = install_postboot_heartbeat(mounts.mnt)
-                write_recovery_doc(mounts.mnt, luks_uuid)
-                recovery_doc_path = os.path.join(mounts.mnt, "root", "RP5_RECOVERY.md")
+                recovery_doc_meta = write_recovery_doc(mounts.mnt, luks_uuid)
                 cleanup_stats = cleanup_pycache(mounts.mnt)
                 postcheck_report = run_postcheck(mounts.mnt, luks_uuid, p1_uuid)
             except InitramfsVerificationError as exc:
@@ -901,6 +973,8 @@ def _main_impl(argv: Optional[list[str]] = None) -> int:  # pragma: no cover - e
     result_payload = {
         "sync_performed": sync_performed,
         "flags": vars(flags),
+        "log_path": log_path or _result_log_path(),
+        "safety_check": safety_snapshot,
         "plan": {
             "device": plan.device,
             "esp_mb": plan.esp_mb,
@@ -934,9 +1008,17 @@ def _main_impl(argv: Optional[list[str]] = None) -> int:  # pragma: no cover - e
         "postcheck": {
             "requested": flags.do_postcheck,
             "heartbeat": heartbeat_meta,
-            "recovery_doc": recovery_doc_path,
+            "recovery_doc": recovery_doc_meta,
             "report": postcheck_report,
             "cleanup": cleanup_stats,
+        },
+        "timing": {
+            "rsync": {
+                "duration_sec": rsync_meta.get("duration_sec"),
+                "retries": rsync_meta.get("retries"),
+            },
+            "ensure_packages": _timing_from_packages(packages_meta),
+            "initramfs": _timing_from_rebuild(rebuild_meta),
         },
         "steps": planned_steps,
     }

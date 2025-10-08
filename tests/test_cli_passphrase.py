@@ -24,8 +24,9 @@ class PassphrasePathTests(unittest.TestCase):
     def test_plan_uses_normalized_passphrase(self):
         captured = {}
 
-        def fake_plan_payload(plan, flags, root_src):
+        def fake_plan_payload(plan, flags, root_src, safety_snapshot):
             captured["plan"] = plan
+            captured["safety"] = safety_snapshot
             return {"plan": "ok"}
 
         def fake_emit_result(*args, **kwargs):

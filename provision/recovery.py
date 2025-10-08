@@ -6,7 +6,7 @@ import tarfile
 from .executil import run
 
 
-def write_recovery_doc(mnt: str, luks_uuid: str):
+def write_recovery_doc(mnt: str, luks_uuid: str) -> dict:
     doc = (
         '# RP5 Recovery (NVMe LUKS Root)\n\n'
         '## Unlock\n'
@@ -22,6 +22,12 @@ def write_recovery_doc(mnt: str, luks_uuid: str):
     os.makedirs(os.path.dirname(p), exist_ok=True)
     with open(p, 'w', encoding='utf-8') as f:
         f.write(doc)
+    metadata = {
+        'host_path': p,
+        'target_path': '/root/RP5_RECOVERY.md',
+        'exists': os.path.isfile(p),
+    }
+    return metadata
 
 
 def install_postboot_check(mnt: str):
