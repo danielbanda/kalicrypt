@@ -75,7 +75,7 @@ def _result_log_path() -> str:
         return RESULT_LOG_PATH
     path = resolve_log_path()
     if not path:
-        base = os.path.expanduser("~/rp5/03_LOGS")
+        base = os.path.expanduser("/home/admin/rp5/03_LOGS")
         try:
             os.makedirs(base, exist_ok=True)
         except Exception:
