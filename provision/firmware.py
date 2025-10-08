@@ -13,8 +13,10 @@ def populate_esp(dst_boot_fw: str, preserve_cmdline=True, preserve_config=True, 
     if not src:
         raise RuntimeError("populate_esp: no firmware source found (looked in: %s)" % ", ".join(SRC_CANDIDATES))
     excludes = []
-    if preserve_cmdline: excludes += ["--exclude", "cmdline.txt"]
-    if preserve_config:  excludes += ["--exclude", "config.txt"]
+    if preserve_cmdline and os.path.exists(os.path.join(dst_boot_fw, "cmdline.txt")):
+        excludes += ["--exclude", "cmdline.txt"]
+    if preserve_config and os.path.exists(os.path.join(dst_boot_fw, "config.txt")):
+        excludes += ["--exclude", "config.txt"]
     if shutil.which("rsync"):
         run(["rsync", "-aHAX"] + excludes + [src + "/", dst_boot_fw + "/"], check=True, dry_run=dry_run)
     else:
