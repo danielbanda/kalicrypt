@@ -1,5 +1,6 @@
 """Write fstab/crypttab/cmdline and validate (Phase 2)."""
 import os
+from typing import Iterable
 
 
 def write_fstab(mnt: str, p1_uuid: str, p2_uuid: str):
@@ -74,6 +75,69 @@ def write_cmdline(
             os.fsync(f.fileno())
         except Exception:
             pass
+
+
+def _line_lookup(lines: Iterable[str]) -> dict[str, str]:
+    lookup: dict[str, str] = {}
+    for line in lines:
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#"):
+            continue
+        if "=" in stripped:
+            key = stripped.split("=", 1)[0].strip().lower()
+        else:
+            key = stripped.split(None, 1)[0].strip().lower()
+        lookup[key] = stripped
+    return lookup
+
+
+def write_config(
+    dst_boot_fw: str,
+    initramfs_image: str = "initramfs_2712",
+    kernel_image: str = "vmlinuz",
+    device_tree: str = "bcm2712-rpi-5-b.dtb",
+):
+    path = os.path.join(dst_boot_fw, "config.txt")
+    os.makedirs(dst_boot_fw, exist_ok=True)
+    existing_lines: list[str] = []
+    if os.path.isfile(path):
+        try:
+            with open(path, "r", encoding="utf-8") as fh:
+                existing_lines = fh.read().splitlines()
+        except Exception:
+            existing_lines = []
+
+    updated_lines = list(existing_lines)
+    lookup = _line_lookup(updated_lines)
+
+    def _ensure_line(key: str, desired: str) -> None:
+        current = lookup.get(key)
+        if current and current.lower() == desired.lower():
+            return
+        if current:
+            idx = next(
+                (i for i, line in enumerate(updated_lines) if line.strip().lower() == current.lower()),
+                None,
+            )
+            if idx is not None:
+                updated_lines[idx] = desired
+        else:
+            updated_lines.append(desired)
+        lookup[key] = desired
+
+    _ensure_line("device_tree", f"device_tree={device_tree}")
+    _ensure_line("os_check", "os_check=0")
+    _ensure_line("kernel", f"kernel={kernel_image}")
+    _ensure_line("initramfs", f"initramfs {initramfs_image} followkernel")
+
+    if updated_lines != existing_lines:
+        with open(path, "w", encoding="utf-8") as fh:
+            fh.write("\n".join(updated_lines).rstrip() + "\n")
+            try:
+                fh.flush()
+                os.fsync(fh.fileno())
+            except Exception:
+                pass
 
 
 def assert_cmdline_uuid(dst_boot_fw: str, luks_uuid: str, root_mapper: str | None = None):

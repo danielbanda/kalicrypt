@@ -13,4 +13,4 @@ This folder contains tactical and reference documents for the RP5 project.
 3. When generating checkpoints, include the entire `rp5/` tree to ensure no content is lost.
 
 
-**Latest next steps:** `next_steps_20251003_0453.md`
+**Latest next steps:** `next_steps_20251008_2325.md`

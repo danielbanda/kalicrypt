@@ -17,6 +17,7 @@ from .boot_plumbing import (
     assert_cmdline_uuid,
     assert_crypttab_uuid,
     write_cmdline,
+    write_config,
     write_crypttab,
     write_fstab,
 )
@@ -863,6 +864,7 @@ def _main_impl(argv: Optional[list[str]] = None) -> int:  # pragma: no cover - e
                 "FAIL_INITRAMFS_VERIFY",
                 extra={"phase": "rebuild", "error": str(exc)},
             )
+        write_config(mounts.esp)
         boot_surface = verify_initramfs(mounts.esp, luks_uuid=luks_uuid)
         try:
             boot_surface = require_boot_surface_ok(boot_surface)

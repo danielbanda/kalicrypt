@@ -4,6 +4,7 @@ from provision.boot_plumbing import (
     assert_cmdline_uuid,
     assert_crypttab_uuid,
     write_cmdline,
+    write_config,
     write_crypttab,
     write_fstab,
     _resolve_root_mapper,
@@ -88,3 +89,37 @@ def test_assert_crypttab_uuid(tmp_path):
     ct.write_text("", encoding="utf-8")
     with pytest.raises(RuntimeError):
         assert_crypttab_uuid(str(tmp_path), "abcd")
+
+
+def test_write_config_creates_with_expected_lines(tmp_path):
+    esp = tmp_path / "boot" / "firmware"
+    esp.mkdir(parents=True)
+
+    write_config(str(esp))
+
+    cfg = read(esp / "config.txt")
+    assert "device_tree=bcm2712-rpi-5-b.dtb" in cfg
+    assert "os_check=0" in cfg
+    assert "kernel=vmlinuz" in cfg
+    assert "initramfs initramfs_2712 followkernel" in cfg
+
+
+def test_write_config_updates_existing_initramfs_line(tmp_path):
+    esp = tmp_path / "boot" / "firmware"
+    esp.mkdir(parents=True)
+    cfg_path = esp / "config.txt"
+    cfg_path.write_text(
+        "device_tree=bcm2712-rpi-5-b.dtb\n"
+        "kernel=oldkernel.img\n"
+        "initramfs initramfs_old followkernel\n",
+        encoding="utf-8",
+    )
+
+    write_config(str(esp), initramfs_image="initramfs_2712")
+
+    cfg = read(cfg_path).splitlines()
+    assert "kernel=vmlinuz" in cfg
+    assert "initramfs initramfs_2712 followkernel" in cfg
+    # Ensure idempotency
+    write_config(str(esp), initramfs_image="initramfs_2712")
+    assert read(cfg_path).splitlines() == cfg
