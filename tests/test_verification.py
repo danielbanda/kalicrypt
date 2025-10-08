@@ -149,9 +149,7 @@ def test_verify_triplet_success(tmp_path):
     etc_dir = tmp_path / "etc"
     etc_dir.mkdir()
 
-    (esp_dir / "cmdline.txt").write_text(
-        "cryptdevice=UUID=abc123:cryptroot root=/dev/mapper/rp5vg-root rootwait"
-    )
+    (esp_dir / "cmdline.txt").write_text("cryptdevice=UUID=abc123:cryptroot root=/dev/mapper/rp5vg-root rootwait")
     (etc_dir / "crypttab").write_text("cryptroot UUID=abc123 none\n")
     (etc_dir / "fstab").write_text("/dev/mapper/rp5vg-root / ext4 defaults 0 1\n")
     (esp_dir / "initramfs_2712").write_text("dummy")
