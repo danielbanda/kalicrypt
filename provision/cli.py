@@ -141,7 +141,7 @@ def _emit_safety_check(snapshot: Dict[str, Any]) -> None:
 
 
 def _log_path(name: str) -> str:
-    base = os.path.expanduser("~/rp5/03_LOGS")
+    base = os.path.expanduser("/home/admin/rp5/03_LOGS")
     try:
         os.makedirs(base, exist_ok=True)
     except Exception:
@@ -174,7 +174,7 @@ def _version_metadata() -> Dict[str, Any]:
 
 
 def _emit_version_stamp(meta: Dict[str, Any]) -> Dict[str, Any]:
-    base = os.path.expanduser("~/rp5/03_LOGS")
+    base = os.path.expanduser("/home/admin/rp5/03_LOGS")
     os.makedirs(base, exist_ok=True)
     path = os.path.join(base, f"{meta['ts']}.ver")
     try:
@@ -690,7 +690,7 @@ def _run_postcheck_only(
                 extra={"why": exc.why, "checks": exc.result},
             )
 
-        rec_dir = os.path.expanduser("~/rp5/04_ARTIFACTS/recovery")
+        rec_dir = os.path.expanduser("/home/admin/rp5/04_ARTIFACTS/recovery")
         os.makedirs(rec_dir, exist_ok=True)
         rec = {
             "device": plan.device,

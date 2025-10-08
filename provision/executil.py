@@ -9,7 +9,6 @@ from typing import Sequence
 
 LOG_DIRS = [
     "/home/admin/rp5/03_LOGS",
-    "~/rp5/03_LOGS",
     "/var/log/rp5",
     "/tmp/rp5-logs",
 ]
