@@ -57,13 +57,105 @@
       "  \u2514\u2500cryptroot    crypt 237.7G  0        0        0B       0B         0 ",
       "    \u2514\u2500rp5vg-root lvm   237.7G  0        0        0B       0B         0 "
     ],
-    "lsblk_verbose": [
-      "ALIGNMENT ID-LINK                               ID                               DISC-ALN DAX DISC-GRAN DISK-SEQ DISC-MAX DISC-ZERO FSAVAIL FSROOTS FSSIZE FSTYPE      FSUSED FSUSE% FSVER GROUP HCTL HOTPLUG KNAME     LABEL   LOG-SEC MAJ:MIN MAJ MIN MIN-IO MODE       MODEL  MQ NAME        OPT-IO OWNER PARTFLAGS PARTLABEL PARTN PARTTYPE                             PARTTYPENAME     PARTUUID                             PATH           PHY-SEC PKNAME  PTTYPE PTUUID                                RA RAND     REV RM RO ROTA RQ-SIZE SCHED SERIAL                 SIZE   START STATE SUBSYSTEMS              MOUNTPOINT MOUNTPOINTS TRAN   TYPE UUID                                 VENDOR WSAME WWN                                                                    ZONED ZONE-SZ ZONE-WGRAN ZONE-APP ZONE-NR ZONE-OMAX ZONE-AMAX",
-      "        0 nvme-ORICO_VCYPH6UP7QLYJDOFL15J       ORICO_VCYPH6UP7QLYJDOFL15J              0   0      512B       25       2T         0                                                        disk             0 nvme0n1               512 259:0   259 0      512 brw-rw---- ORICO   4 nvme0n1          0 root                                                                                                                       /dev/nvme0n1       512         gpt    0d23da3b-f890-410e-a6be-d7ed36c977e0 128    0 SN15098  0  0    0    1023 none  VCYPH6UP7QLYJDOFL15J 238.5G         live  block:nvme:pci:platform                        nvme   disk                                                0B nvme.1e4b-564359504836555037514c594a444f464c31354a-4f5249434f-00000001 none       0B         0B       0B       0         0         0",
-      "        0 nvme-ORICO_VCYPH6UP7QLYJDOFL15J-part1 ORICO_VCYPH6UP7QLYJDOFL15J-part1        0   0      512B       25       2T         0                        vfat                      FAT16 disk             0 nvme0n1p1 EFI         512 259:1   259 1      512 brw-rw----         4 \u251c\u2500nvme0n1p1      0 root                          1 c12a7328-f81f-11d2-ba4b-00a0c93ec93b EFI System       75f35e5f-cfb6-4f9a-8b8b-e689daf86ce8 /dev/nvme0n1p1     512 nvme0n1 gpt    0d23da3b-f890-410e-a6be-d7ed36c977e0 128    0          0  0    0    1023 none                         256M    2048       block:nvme:pci:platform                        nvme   part A0F0-7F22                                      0B nvme.1e4b-564359504836555037514c594a444f464c31354a-4f5249434f-00000001 none       0B         0B       0B       0         0         0",
-      "        0 nvme-ORICO_VCYPH6UP7QLYJDOFL15J-part2 ORICO_VCYPH6UP7QLYJDOFL15J-part2        0   0      512B       25       2T         0                        ext4                      1.0   disk             0 nvme0n1p2 boot        512 259:2   259 2      512 brw-rw----         4 \u251c\u2500nvme0n1p2      0 root                          2 0fc63daf-8483-4772-8e79-3d69d8477de4 Linux filesystem 8b875c5c-8725-463d-a52d-0856ef3b9744 /dev/nvme0n1p2     512 nvme0n1 gpt    0d23da3b-f890-410e-a6be-d7ed36c977e0 128    0          0  0    0    1023 none                         512M  526336       block:nvme:pci:platform                        nvme   part 9166caa8-af9e-4958-9fcc-395347548735           0B nvme.1e4b-564359504836555037514c594a444f464c31354a-4f5249434f-00000001 none       0B         0B       0B       0         0         0",
-      "        0 nvme-ORICO_VCYPH6UP7QLYJDOFL15J-part3 ORICO_VCYPH6UP7QLYJDOFL15J-part3        0   0      512B       25       2T         0                        crypto_LUKS               2     disk             0 nvme0n1p3 rp5root     512 259:3   259 3      512 brw-rw----         4 \u2514\u2500nvme0n1p3      0 root                          3 ca7d7ccb-63ed-4c53-861c-1742536059cc                  31df4115-961b-41e0-b8dc-147ae94f28bf /dev/nvme0n1p3     512 nvme0n1 gpt    0d23da3b-f890-410e-a6be-d7ed36c977e0 128    0          0  0    0    1023 none                       237.7G 1574912       block:nvme:pci:platform                        nvme   part 79fa4cf3-5ff1-4fc8-899e-9f0abbea47c5           0B nvme.1e4b-564359504836555037514c594a444f464c31354a-4f5249434f-00000001 none       0B         0B       0B       0         0         0"
-    ],
+    "lsblk_verbose": {
+      "blockdevices": [
+        {
+          "name": "sda",
+          "type": "disk",
+          "size": "28.9G",
+          "mountpoint": null,
+          "mountpoints": [
+            null
+          ],
+          "children": [
+            {
+              "name": "sda1",
+              "type": "part",
+              "size": "255M",
+              "fstype": "vfat",
+              "mountpoint": "/boot/firmware",
+              "mountpoints": [
+                "/boot/firmware"
+              ]
+            },
+            {
+              "name": "sda2",
+              "type": "part",
+              "size": "28.7G",
+              "fstype": "ext4",
+              "mountpoint": "/",
+              "mountpoints": [
+                "/"
+              ]
+            }
+          ]
+        },
+        {
+          "name": "nvme0n1",
+          "type": "disk",
+          "size": "238.5G",
+          "mountpoint": null,
+          "mountpoints": [
+            null
+          ],
+          "children": [
+            {
+              "name": "nvme0n1p1",
+              "type": "part",
+              "size": "256M",
+              "fstype": "vfat",
+              "mountpoint": "/mnt/nvme/boot/firmware",
+              "mountpoints": [
+                "/mnt/nvme/boot/firmware"
+              ]
+            },
+            {
+              "name": "nvme0n1p2",
+              "type": "part",
+              "size": "512M",
+              "fstype": "ext4",
+              "mountpoint": "/mnt/nvme/boot",
+              "mountpoints": [
+                "/mnt/nvme/boot"
+              ]
+            },
+            {
+              "name": "nvme0n1p3",
+              "type": "part",
+              "size": "237.7G",
+              "fstype": "crypto_LUKS",
+              "mountpoint": null,
+              "mountpoints": [
+                null
+              ],
+              "children": [
+                {
+                  "name": "cryptroot",
+                  "type": "crypt",
+                  "size": "237.7G",
+                  "mountpoint": null,
+                  "mountpoints": [
+                    null
+                  ],
+                  "children": [
+                    {
+                      "name": "rp5vg-root",
+                      "type": "lvm",
+                      "size": "237.7G",
+                      "fstype": "ext4",
+                      "mountpoint": "/mnt/nvme",
+                      "mountpoints": [
+                        "/mnt/nvme"
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
     "same_underlying_disk": false
   },
   "steps": [

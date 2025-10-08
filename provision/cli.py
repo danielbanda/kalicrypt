@@ -300,9 +300,13 @@ def _plan_payload(plan: ProvisionPlan, flags: Flags, root_src: str) -> Dict[str,
     except Exception:
         pass
     try:
-        lsblk_verbose = run(["lsblk", "-O", plan.device], check=False)
-        if getattr(lsblk_verbose, "out", "").strip().splitlines():
-            state["lsblk_verbose"] = lsblk_verbose.out.strip().splitlines()
+        lsblk_verbose = run(["lsblk", "--json", "-O", plan.device], check=False)
+        out = (getattr(lsblk_verbose, "out", "") or "").strip()
+        if out:
+            try:
+                state["lsblk_verbose"] = json.loads(out)
+            except json.JSONDecodeError:
+                state["lsblk_verbose_raw"] = out.splitlines()
     except Exception:
         pass
     state["same_underlying_disk"] = _same_underlying_disk(plan.device, root_src)
