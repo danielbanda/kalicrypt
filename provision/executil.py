@@ -27,6 +27,12 @@ def _ensure_logger():
     return None
 
 
+def resolve_log_path() -> str | None:
+    """Return the active log path, creating directories when possible."""
+
+    return _ensure_logger()
+
+
 def _log_event(kind: str, cmd: list[str], rc: int = None, out: str = None, err: str = None, dur: float = None):
     ts = _dt.datetime.utcnow().isoformat() + "Z"
     line = {"ts": ts, "kind": kind, "cmd": cmd, "rc": rc, "dur": dur, "out": out, "err": err}

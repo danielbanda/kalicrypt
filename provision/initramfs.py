@@ -116,6 +116,7 @@ def rebuild(mnt: str, dry_run: bool = False) -> Dict[str, Any]:
         ["chroot", mnt, "/bin/cp", "-f", f"/boot/initrd.img-{kver}", "/boot/firmware/initramfs_2712"],
         check=True,
         dry_run=dry_run,
+        timeout=INITRAMFS_TIMEOUT,
     )
     telemetry["copy"] = {"rc": copy_res.rc, "duration_sec": getattr(copy_res, "duration", None)}
 
@@ -128,6 +129,7 @@ def rebuild(mnt: str, dry_run: bool = False) -> Dict[str, Any]:
         ],
         check=True,
         dry_run=dry_run,
+        timeout=INITRAMFS_TIMEOUT,
     )
     telemetry["list"] = {"rc": list_res.rc, "duration_sec": getattr(list_res, "duration", None)}
     telemetry["image"] = os.path.join(mnt, "boot", "firmware", "initramfs_2712")

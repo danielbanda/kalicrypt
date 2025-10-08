@@ -3,7 +3,7 @@ from __future__ import annotations
 import os
 import re
 
-from .verification import verify_boot_surface
+from .verification import require_boot_surface_ok, verify_boot_surface
 
 
 def _read(path: str) -> str:
@@ -74,8 +74,7 @@ def run_postcheck(mnt: str, luks_uuid: str, p1_uuid: str | None = None, verbose:
     boot_fw = os.path.join(mnt, "boot", "firmware")
     boot_surface = verify_boot_surface(boot_fw, luks_uuid=luks_uuid)
     res["checks"].append({"boot_surface": boot_surface})
-    if not boot_surface.get("ok", False):
-        raise RuntimeError("boot firmware/initramfs verification failed")
+    require_boot_surface_ok(boot_surface)
 
     # 3) Optionally validate ESP UUID (if provided)
     if p1_uuid:
