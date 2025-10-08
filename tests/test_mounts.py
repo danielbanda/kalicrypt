@@ -1,3 +1,5 @@
+import os
+import time
 from types import SimpleNamespace
 
 import pytest
@@ -208,3 +210,74 @@ def test_mount_targets_safe_raises_on_failed_mount(monkeypatch):
 
     assert "mount failed" in str(excinfo.value)
     assert any(cmd for cmd in observed if cmd and cmd[0] == "mount")
+
+def test_wait_for_block_behaviour(monkeypatch):
+    monkeypatch.setenv("PYTEST_CURRENT_TEST", "1")
+    mounts._wait_for_block("/dev/skip")
+
+    monkeypatch.delenv("PYTEST_CURRENT_TEST", raising=False)
+    monkeypatch.setattr(mounts.os.path, "exists", lambda path: path == "/dev/ready")
+    mounts._wait_for_block("/dev/ready")
+
+    seq = iter([0.0, 1.0, 2.0, 10.0])
+    monkeypatch.setattr(mounts.os.path, "exists", lambda path: False)
+    monkeypatch.setattr(mounts.time, "time", lambda: next(seq))
+    monkeypatch.setattr(mounts.time, "sleep", lambda s: None)
+    monkeypatch.setattr(mounts, "udev_settle", lambda: None)
+    with pytest.raises(SystemExit):
+        mounts._wait_for_block("/dev/missing")
+
+
+def test_blkid_and_mount_helpers(monkeypatch):
+    responses = [
+        DummyResult(""),
+        DummyResult(""),
+        DummyResult("", err="ext4 volume"),
+    ]
+
+    def fake_run(cmd, check=False, **_kwargs):
+        return responses.pop(0)
+
+    monkeypatch.setattr(mounts, "run", fake_run)
+    monkeypatch.setattr(mounts, "udev_settle", lambda: None)
+    assert mounts._blkid("/dev/test") == "ext4"
+
+    recorded: list[list[str]] = []
+
+    def record_run(cmd, check=True, **_kwargs):
+        recorded.append(cmd)
+        return DummyResult("")
+
+    monkeypatch.setattr(mounts, "run", record_run)
+    mounts._mount("/dev/test", "/mnt/dir", opts=["rw", "noexec"])
+    assert recorded[0] == ["mkdir", "-p", "/mnt/dir"]
+    assert ["mount", "-o", "rw,noexec", "/dev/test", "/mnt/dir"] in recorded
+
+
+def test_ensure_fs_and_assert_sources(monkeypatch):
+    monkeypatch.setattr(mounts, "_wait_for_block", lambda dev: None)
+    monkeypatch.setattr(mounts, "_blkid", lambda dev: "ext4" if dev == "/dev/existing" else "unknown")
+    monkeypatch.setattr(mounts, "run", lambda cmd, **kwargs: DummyResult(""))
+    monkeypatch.setattr(mounts, "udev_settle", lambda: None)
+    mounts._ensure_fs("/dev/existing", "ext4")
+    with pytest.raises(SystemExit):
+        mounts._ensure_fs("/dev/new", "ntfs")
+
+    def fake_run(cmd, check=False, **_kwargs):
+        if cmd[0] == "findmnt":
+            return DummyResult(f"{cmd[-1]}\n")
+        if cmd[0] == "readlink":
+            return DummyResult(cmd[-1])
+        if cmd[0] == "blkid":
+            return DummyResult("UUID")
+        return DummyResult("")
+
+    monkeypatch.setattr(mounts, "run", fake_run)
+    mounts.assert_mount_sources(
+        "/mnt/root",
+        "/mnt/boot",
+        "/mnt/esp",
+        "/mnt/root",
+        "/mnt/boot",
+        "/mnt/esp",
+    )

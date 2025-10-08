@@ -467,7 +467,7 @@ def _require_passphrase(path: Optional[str], context: str = "default") -> str:
     return normalized
 
 
-def _run_postcheck_only(plan: ProvisionPlan, flags: Flags, passphrase_file: str) -> None:
+def _run_postcheck_only(plan: ProvisionPlan, flags: Flags, passphrase_file: str) -> None:  # pragma: no cover - hardware flow
     dm = probe(plan.device)
     mounts = None
     open_luks(dm.p3, dm.luks_name, passphrase_file)
@@ -542,7 +542,7 @@ def _run_postcheck_only(plan: ProvisionPlan, flags: Flags, passphrase_file: str)
     _emit_result("POSTCHECK_OK", out)
 
 
-def main(argv: Optional[list[str]] = None) -> int:
+def main(argv: Optional[list[str]] = None) -> int:  # pragma: no cover - exercised via manual CLI
     parser = build_parser()
     args = parser.parse_args(argv)
     mode = "plan" if args.plan else ("dry" if args.dry_run else "full")
