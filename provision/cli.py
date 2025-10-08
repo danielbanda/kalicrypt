@@ -103,7 +103,7 @@ def _emit_version_stamp(meta: Dict[str, Any]) -> Dict[str, Any]:
     try:
         with open(path, "w", encoding="utf-8") as fh:
             json.dump(meta, fh, indent=2)
-        print(f"version_stamp={path}")
+        #print(f"version_stamp={path}")
         enriched = dict(meta)
         enriched["path"] = path
         return enriched
