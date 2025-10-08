@@ -7,7 +7,7 @@ import subprocess
 import time
 from typing import Sequence
 
-LOG_DIRS = ["/var/log/rp5", "/tmp/rp5-logs"]
+LOG_DIRS = ["~/rp5/03_LOGS", "/var/log/rp5", "/tmp/rp5-logs"]
 LOG_PATH = None
 
 
@@ -16,9 +16,10 @@ def _ensure_logger():
     if LOG_PATH:
         return LOG_PATH
     for d in LOG_DIRS:
+        d_expanded = os.path.expanduser(d)
         try:
-            os.makedirs(d, exist_ok=True)
-            LOG_PATH = os.path.join(d, "ete_nvme.jsonl")
+            os.makedirs(d_expanded, exist_ok=True)
+            LOG_PATH = os.path.join(d_expanded, "ete_nvme.jsonl")
             return LOG_PATH
         except Exception:
             continue

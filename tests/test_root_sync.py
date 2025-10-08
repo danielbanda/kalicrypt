@@ -17,7 +17,7 @@ Total bytes received: 5M
 sent 100 bytes  received 200 bytes  300.00 bytes/sec
 Speedup is 5.00
 """
-    stats = root_sync._parse_rsync_stats(text)
+    stats = root_sync.parse_rsync_stats(text)
     assert stats["files_transferred"] == 5
     assert "speedup" in stats
 

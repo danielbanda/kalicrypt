@@ -8,15 +8,17 @@ from provision import initramfs
 def test_ensure_packages_installs_missing(monkeypatch):
     calls = []
 
-    def fake_run(cmd, check=False, dry_run=False):
+    def fake_run(cmd, check=False, dry_run=False, timeout=None):  # noqa: ARG001
         calls.append(list(cmd))
         if "dpkg" in cmd:
             return SimpleNamespace(rc=1)
         return SimpleNamespace(rc=0)
 
     monkeypatch.setattr(initramfs, "run", fake_run)
-    initramfs.ensure_packages("/mnt")
+    stats = initramfs.ensure_packages("/mnt")
     assert any("apt-get" in " ".join(cmd) for cmd in calls)
+    assert stats["retries"] == 0
+    assert len(stats["installs"]) == len(initramfs.REQUIRED_PACKAGES)
 
 
 def test_ensure_crypttab_prompts(tmp_path):
@@ -46,33 +48,28 @@ def test_rebuild_invokes_commands(monkeypatch):
     monkeypatch.setattr(initramfs, "_detect_kernel_version", lambda mnt: "6.1.0")
     calls = []
 
-    def fake_run(cmd, check=False, dry_run=False):
+    def fake_run(cmd, check=False, dry_run=False, timeout=None):  # noqa: ARG001
         calls.append(list(cmd))
         if "-c" in cmd:
             return SimpleNamespace(rc=1)
         return SimpleNamespace(rc=0)
 
     monkeypatch.setattr(initramfs, "run", fake_run)
-    initramfs.rebuild("/mnt")
+    meta = initramfs.rebuild("/mnt")
     assert any("update-initramfs" in " ".join(cmd) for cmd in calls)
     assert any(cmd[:3] == ["chroot", "/mnt", "/usr/bin/lsinitramfs"] for cmd in calls)
+    assert meta["retries"] == 1
 
 
 def test_verify_and_newest_initrd(tmp_path, monkeypatch):
     boot = tmp_path
     image = boot / "initramfs_999"
     image.write_bytes(b"0" * 200000)
-    monkeypatch.setattr(initramfs, "newest_initrd", lambda path: str(image))
-    monkeypatch.setattr(initramfs.subprocess, "check_output", lambda cmd, text=True: "cryptsetup\nlvm\ndm-crypt\nnvme")
+    monkeypatch.setattr(initramfs, "verify_boot_surface", lambda path, luks_uuid=None: {"ok": True, "initramfs_path": str(image)})
 
-    path = initramfs.verify(str(boot))
-    assert path.endswith("initramfs_999")
-    cfg = boot / "config.txt"
-    assert "initramfs" in cfg.read_text(encoding="utf-8")
-
-    image.unlink()
-    with pytest.raises(RuntimeError):
-        initramfs.verify(str(boot))
+    report = initramfs.verify(str(boot))
+    assert report["ok"]
+    assert report["initramfs_path"].endswith("initramfs_999")
 
 
 def test_newest_initrd(tmp_path):

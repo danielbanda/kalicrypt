@@ -1,10 +1,14 @@
 """Root filesystem sync to target (Phase 5.2)."""
+
+import os
 import shutil
+import subprocess
+import time
 
 from .executil import run
 
 
-def _parse_rsync_stats(text: str) -> dict:
+def parse_rsync_stats(text: str) -> dict:
     if not isinstance(text, str):
         return {}
     stats = {}
@@ -42,9 +46,11 @@ def _parse_rsync_stats(text: str) -> dict:
 EXCLUDES = ["/proc", "/sys", "/dev", "/run", "/mnt", "/media", "/tmp"]
 
 
-def rsync_root(dst_mnt: str, dry_run: bool = False, timeout_sec: int = 7200, exclude_boot: bool = False):
+def rsync_root(dst_mnt: str, dry_run: bool = False, timeout_sec: int = 360, exclude_boot: bool = False):
     dst = dst_mnt.rstrip("/") + "/"
     rsync_path = shutil.which("rsync")
+    start_time = time.perf_counter()
+    retries = 0
     if rsync_path:
         base = [
             rsync_path,
@@ -61,17 +67,21 @@ def rsync_root(dst_mnt: str, dry_run: bool = False, timeout_sec: int = 7200, exc
             for e in ("/boot", "/boot/", "/boot/*", "/boot/firmware", "/boot/firmware/*"):
                 base += ["--exclude", e]
         cmd = base + ["/", dst]
-        import subprocess
         try:
-            return run(cmd, check=True, dry_run=dry_run, timeout=timeout_sec)
+            result = run(cmd, check=True, dry_run=dry_run, timeout=timeout_sec)
+            setattr(result, "retries", retries)
+            return result
         except subprocess.CalledProcessError as e:
             if e.returncode in (23, 24):
                 print(
                     f"[WARN] rsync completed with return code {e.returncode} (partial transfer/vanished files). Continuing.")
+                setattr(e, "duration", time.perf_counter() - start_time)
+                setattr(e, "retries", retries)
                 return e
             raise
     # Fallback: cp -a (no delete, best effort)
     result = run(["cp", "-a", "/.", dst_mnt], check=True, dry_run=dry_run, timeout=timeout_sec)
+    setattr(result, "retries", retries)
     if exclude_boot:
         for rel in ("boot", "boot/firmware"):
             run(["rm", "-rf", f"{dst_mnt.rstrip('/')}/{rel}"], check=False, dry_run=dry_run)
@@ -80,7 +90,6 @@ def rsync_root(dst_mnt: str, dry_run: bool = False, timeout_sec: int = 7200, exc
 
 # RSYNC_FALLBACK_OK helper
 def _rsync_with_fallback(run, cmd, src, dst):
-    import subprocess, shutil, os
     try:
         rc = subprocess.run(cmd, capture_output=True, text=True).returncode
         if rc in (0, 23, 24):

@@ -9,6 +9,7 @@ import shlex
 import subprocess
 import sys
 import time
+from datetime import datetime, timezone
 from typing import Any, Dict, Optional
 
 from . import safety
@@ -37,7 +38,7 @@ from .partitioning import apply_layout, verify_layout
 from .postboot import install_postboot_check as install_postboot_heartbeat
 from .postcheck import cleanup_pycache, run_postcheck
 from .recovery import write_recovery_doc
-from .root_sync import rsync_root
+from .root_sync import parse_rsync_stats, rsync_root
 
 RESULT_CODES: Dict[str, int] = {
     "PLAN_OK": 0,
@@ -72,6 +73,47 @@ def _log_path(name: str) -> str:
     return os.path.join(base, f"{name}_{ts}.json")
 
 
+def _git_rev_parse(ref: str) -> str | None:
+    try:
+        proc = subprocess.run(
+            ["git", "rev-parse", ref],
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        return proc.stdout.strip()
+    except Exception:
+        return None
+
+
+def _version_metadata() -> Dict[str, Any]:
+    ts = datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+    return {
+        "sha_main": _git_rev_parse("HEAD"),
+        "sha_cli": _git_rev_parse("HEAD:provision/cli.py"),
+        "ts": ts,
+        "branch": "in-mem",
+    }
+
+
+def _emit_version_stamp(meta: Dict[str, Any]) -> Dict[str, Any]:
+    base = os.path.expanduser("~/rp5/03_LOGS")
+    os.makedirs(base, exist_ok=True)
+    path = os.path.join(base, f"{meta['ts']}.ver")
+    try:
+        with open(path, "w", encoding="utf-8") as fh:
+            json.dump(meta, fh, indent=2)
+        print(f"version_stamp={path}")
+        enriched = dict(meta)
+        enriched["path"] = path
+        return enriched
+    except Exception:
+        print("version_stamp=<unavailable>")
+        enriched = dict(meta)
+        enriched["path"] = None
+        return enriched
+
+
 def _emit_result(
         kind: str,
         extra: Optional[Dict[str, Any]] = None,
@@ -80,6 +122,9 @@ def _emit_result(
     payload: Dict[str, Any] = {"result": kind, "ts": int(time.time())}
     if extra:
         payload.update(extra)
+    if not kind.endswith("_OK"):
+        meta = _emit_version_stamp(_version_metadata())
+        payload["version"] = meta
     append_jsonl(os.path.expanduser("~/rp5/03_LOGS/ete_nvme.jsonl"), payload)
     print(json.dumps(payload, indent=2))
     code = RESULT_CODES.get(kind, 1) if exit_code is None else exit_code
@@ -254,7 +299,13 @@ def _pre_sync_snapshot(max_mount_lines: int = 20) -> Dict[str, Any]:
 
 
 def _rsync_meta(res: Any) -> Dict[str, Any]:
-    meta: Dict[str, Any] = {"exit": None, "out": None, "err": None, "warning": False, "note": None}
+    meta: Dict[str, Any] = {
+        "exit": None,
+        "out": None,
+        "err": None,
+        "warning": False,
+        "note": None,
+    }
     try:
         if hasattr(res, "returncode"):
             meta["exit"] = res.returncode
@@ -279,6 +330,20 @@ def _rsync_meta(res: Any) -> Dict[str, Any]:
     if meta["exit"] in (23, 24):
         meta["warning"] = True
         meta["note"] = "partial transfer (vanished or permission-restricted files)"
+    meta["duration_sec"] = getattr(res, "duration", None)
+    meta["retries"] = getattr(res, "retries", 0)
+    out_text = meta.get("out") or ""
+    summary = _rsync_summarize(out_text)
+    stats = parse_rsync_stats(out_text)
+    required_keys = ("files_transferred", "total_file_size", "throughput_line", "speedup")
+    summary_stats = summary.setdefault("stats", {})
+    meta_stats = {}
+    for key in required_keys:
+        value = stats.get(key)
+        summary_stats.setdefault(key, value)
+        meta_stats[key] = value
+    meta["summary"] = summary
+    meta["stats"] = meta_stats
     return meta
 
 
@@ -542,7 +607,7 @@ def _run_postcheck_only(plan: ProvisionPlan, flags: Flags, passphrase_file: str)
     _emit_result("POSTCHECK_OK", out)
 
 
-def main(argv: Optional[list[str]] = None) -> int:  # pragma: no cover - exercised via manual CLI
+def _main_impl(argv: Optional[list[str]] = None) -> int:  # pragma: no cover - exercised via manual CLI
     parser = build_parser()
     args = parser.parse_args(argv)
     mode = "plan" if args.plan else ("dry" if args.dry_run else "full")
@@ -654,10 +719,15 @@ def main(argv: Optional[list[str]] = None) -> int:  # pragma: no cover - exercis
     heartbeat_meta: Optional[Dict[str, Any]] = None
     recovery_doc_path: Optional[str] = None
     root_mapper_path: Optional[str] = None
-    initramfs_image: Optional[str] = None
+    packages_meta: Optional[Dict[str, Any]] = None
+    rebuild_meta: Optional[Dict[str, Any]] = None
+    boot_surface: Optional[Dict[str, Any]] = None
     try:
-        populate_esp(mounts.esp, preserve_cmdline=True, preserve_config=True, dry_run=False)
-        assert_essentials(mounts.esp)
+        try:
+            populate_esp(mounts.esp, preserve_cmdline=True, preserve_config=True, dry_run=False)
+            assert_essentials(mounts.esp)
+        except Exception as exc:  # noqa: BLE001
+            _emit_result("FAIL_FIRMWARE_CHECK", extra={"error": str(exc)})
 
         pre_sync_snapshot = _pre_sync_snapshot()
         rsync_result = rsync_root(mounts.mnt, dry_run=False, exclude_boot=True)
@@ -682,9 +752,23 @@ def main(argv: Optional[list[str]] = None) -> int:  # pragma: no cover - exercis
         )
         assert_cmdline_uuid(mounts.esp, luks_uuid, root_mapper=root_mapper_path)
 
-        ensure_packages(mounts.mnt)
-        rebuild(mounts.mnt)
-        initramfs_image = verify_initramfs(mounts.esp)
+        try:
+            packages_meta = ensure_packages(mounts.mnt)
+        except Exception as exc:  # noqa: BLE001
+            _emit_result(
+                "FAIL_INITRAMFS_VERIFY",
+                extra={"phase": "ensure_packages", "error": str(exc)},
+            )
+        try:
+            rebuild_meta = rebuild(mounts.mnt)
+        except Exception as exc:  # noqa: BLE001
+            _emit_result(
+                "FAIL_INITRAMFS_VERIFY",
+                extra={"phase": "rebuild", "error": str(exc)},
+            )
+        boot_surface = verify_initramfs(mounts.esp, luks_uuid=luks_uuid)
+        if not boot_surface.get("ok", False):
+            _emit_result("FAIL_INITRAMFS_VERIFY", extra={"checks": boot_surface})
 
         if flags.do_postcheck:
             try:
@@ -737,9 +821,17 @@ def main(argv: Optional[list[str]] = None) -> int:  # pragma: no cover - exercis
             "warning": rsync_meta.get("warning"),
             "note": rsync_meta.get("note"),
             "err": rsync_meta.get("err"),
-            "summary": _rsync_summarize(rsync_meta.get("out") or ""),
+            "duration_sec": rsync_meta.get("duration_sec"),
+            "retries": rsync_meta.get("retries"),
+            "stats": rsync_meta.get("stats"),
+            "summary": rsync_meta.get("summary"),
         },
-        "initramfs": {"image": initramfs_image},
+        "initramfs": {
+            "image": boot_surface.get("initramfs_path") if boot_surface else None,
+            "ensure_packages": packages_meta,
+            "rebuild": rebuild_meta,
+            "verification": boot_surface,
+        },
         "postcheck": {
             "requested": flags.do_postcheck,
             "heartbeat": heartbeat_meta,
@@ -777,6 +869,16 @@ def main(argv: Optional[list[str]] = None) -> int:  # pragma: no cover - exercis
     final_payload["phase"] = "completed"
     _emit_result("ETE_DONE_OK", final_payload)
 
+    return 0
+
+
+def main(argv: Optional[list[str]] = None) -> int:  # pragma: no cover - exercised via manual CLI
+    try:
+        return _main_impl(argv)
+    except SystemExit:
+        raise
+    except Exception as exc:  # noqa: BLE001
+        _emit_result("FAIL_UNHANDLED", extra={"error": str(exc)})
     return 0
 
 
