@@ -88,7 +88,7 @@ def _announce_log_path() -> str:
     global _LOG_ANNOUNCED
     path = _result_log_path()
     if not _LOG_ANNOUNCED:
-        print(f"log_path={path}", file=sys.stderr)
+        # print(f"log_path={path}", file=sys.stderr)
         try:
             trace("cli.log_path", path=path)
         except Exception:
@@ -125,7 +125,7 @@ def _emit_safety_check(snapshot: Dict[str, Any]) -> None:
         trace("cli.safety_check", **snapshot)
     except Exception:
         pass
-    print(f"safety_check={json.dumps(snapshot, sort_keys=True)}", file=sys.stderr)
+    #print(f"safety_check={json.dumps(snapshot, sort_keys=True)}", file=sys.stderr)
 
 
 def _log_path(name: str) -> str:
