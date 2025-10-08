@@ -4,9 +4,12 @@ from provision import recovery
 
 
 def test_write_recovery_doc(tmp_path):
-    recovery.write_recovery_doc(str(tmp_path), "1234-ABCD")
+    meta = recovery.write_recovery_doc(str(tmp_path), "1234-ABCD")
     doc = tmp_path / "root/RP5_RECOVERY.md"
     assert "UUID=1234-ABCD" in doc.read_text(encoding="utf-8")
+    assert meta["host_path"] == str(doc)
+    assert meta["target_path"] == "/root/RP5_RECOVERY.md"
+    assert meta["exists"] is True
 
 
 def test_install_postboot_check_creates_script(tmp_path, monkeypatch):

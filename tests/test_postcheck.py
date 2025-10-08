@@ -21,6 +21,18 @@ def test_run_postcheck_success(tmp_path, monkeypatch):
     (etc / "crypttab").write_text("cryptroot UUID=abcd none\n", encoding="utf-8")
     (etc / "fstab").write_text("UUID=esp /boot/firmware vfat\n", encoding="utf-8")
 
+    recovery_doc = tmp_path / "root" / "RP5_RECOVERY.md"
+    recovery_doc.parent.mkdir(parents=True)
+    recovery_doc.write_text("doc", encoding="utf-8")
+
+    script = tmp_path / "usr" / "local" / "sbin" / "rp5-postboot-check"
+    script.parent.mkdir(parents=True, exist_ok=True)
+    script.write_text("#!/bin/sh", encoding="utf-8")
+
+    unit = tmp_path / "etc" / "systemd" / "system" / "rp5-postboot.service"
+    unit.parent.mkdir(parents=True, exist_ok=True)
+    unit.write_text("[Unit]", encoding="utf-8")
+
     boot_fw = tmp_path / "boot" / "firmware"
     boot_fw.mkdir(parents=True)
     (boot_fw / "cmdline.txt").write_text(
@@ -42,6 +54,8 @@ def test_run_postcheck_success(tmp_path, monkeypatch):
     assert any(check.get("fstab") for check in result["checks"])
     assert reported["path"] == str(boot_fw)
     assert reported["uuid"] == "abcd"
+    assert result["installed"]["recovery_doc"]["host_path"] == str(recovery_doc)
+    assert result["installed"]["heartbeat"]["exists"] is True
 
     with pytest.raises(RuntimeError):
         postcheck.run_postcheck(str(tmp_path / "missing"), "abcd")
@@ -53,6 +67,18 @@ def test_run_postcheck_initramfs_failure(tmp_path, monkeypatch):
     etc.mkdir()
     (etc / "crypttab").write_text("cryptroot UUID=abcd none\n", encoding="utf-8")
     (etc / "fstab").write_text("UUID=esp /boot/firmware vfat\n", encoding="utf-8")
+
+    recovery_doc = mnt / "root" / "RP5_RECOVERY.md"
+    recovery_doc.parent.mkdir(parents=True)
+    recovery_doc.write_text("doc", encoding="utf-8")
+
+    script = mnt / "usr" / "local" / "sbin" / "rp5-postboot-check"
+    script.parent.mkdir(parents=True, exist_ok=True)
+    script.write_text("#!/bin/sh", encoding="utf-8")
+
+    unit = mnt / "etc" / "systemd" / "system" / "rp5-postboot.service"
+    unit.parent.mkdir(parents=True, exist_ok=True)
+    unit.write_text("[Unit]", encoding="utf-8")
 
     boot_fw = mnt / "boot" / "firmware"
     boot_fw.mkdir(parents=True)
