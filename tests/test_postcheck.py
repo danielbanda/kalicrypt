@@ -1,6 +1,7 @@
 import pytest
 
 from provision import postcheck
+from provision.verification import InitramfsVerificationError
 
 
 def test_cleanup_pycache(tmp_path):
@@ -44,3 +45,39 @@ def test_run_postcheck_success(tmp_path, monkeypatch):
 
     with pytest.raises(RuntimeError):
         postcheck.run_postcheck(str(tmp_path / "missing"), "abcd")
+
+
+def test_run_postcheck_initramfs_failure(tmp_path, monkeypatch):
+    mnt = tmp_path
+    etc = mnt / "etc"
+    etc.mkdir()
+    (etc / "crypttab").write_text("cryptroot UUID=abcd none\n", encoding="utf-8")
+    (etc / "fstab").write_text("UUID=esp /boot/firmware vfat\n", encoding="utf-8")
+
+    boot_fw = mnt / "boot" / "firmware"
+    boot_fw.mkdir(parents=True)
+
+    # Ensure verify_boot_surface returns a failure surface
+    failure_surface = {
+        "ok": False,
+        "checks": {
+            "initramfs_2712": {
+                "ok": False,
+                "path": str(boot_fw / "initramfs_2712"),
+                "size": 0,
+                "why": "initramfs_2712 missing",
+            }
+        },
+        "errors": [
+            {
+                "check": "initramfs_2712",
+                "path": str(boot_fw / "initramfs_2712"),
+                "why": "initramfs_2712 missing",
+            }
+        ],
+    }
+
+    monkeypatch.setattr(postcheck, "verify_boot_surface", lambda *a, **k: failure_surface)
+
+    with pytest.raises(InitramfsVerificationError):
+        postcheck.run_postcheck(str(mnt), "abcd")

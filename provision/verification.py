@@ -5,6 +5,8 @@ import shlex
 import subprocess
 from typing import Dict, List, Optional
 
+MIN_INITRAMFS_BYTES = 128 * 1024
+
 _PRIVILEGED_BINARIES = {"cryptsetup"}
 
 
@@ -43,6 +45,26 @@ def _read(path):
         return f"<read-failed: {e}>"
 
 
+class InitramfsVerificationError(RuntimeError):
+    """Raised when boot surface verification fails."""
+
+    def __init__(self, result: Dict[str, object]):
+        self.result = result
+        errors = result.get("errors") or []
+        reasons: List[str] = []
+        for err in errors:
+            check = err.get("check") or "unknown"
+            why = err.get("why") or ""
+            detail = why or check
+            path = err.get("path")
+            if path:
+                detail = f"{detail} ({path})"
+            reasons.append(detail)
+        message = "; ".join(reasons) or "initramfs verification failed"
+        super().__init__(message)
+        self.why = message
+
+
 def verify_boot_surface(
     boot_fw_dir: str,
     luks_uuid: Optional[str] = None,
@@ -68,7 +90,12 @@ def verify_boot_surface(
             result.setdefault("errors", []).append(err)
 
     if not os.path.isdir(boot_fw_dir):
-        _record("boot_dir_exists", False, path=boot_fw_dir)
+        _record(
+            "boot_dir_exists",
+            False,
+            path=boot_fw_dir,
+            why="boot firmware directory missing",
+        )
         return result
     _record("boot_dir_exists", True, path=boot_fw_dir)
 
@@ -80,11 +107,25 @@ def verify_boot_surface(
         initramfs_exists,
         path=initramfs_path,
         size=initramfs_size,
+        why=None if initramfs_exists else "initramfs_2712 missing",
     )
+    if initramfs_exists and initramfs_size < MIN_INITRAMFS_BYTES:
+        _record(
+            "initramfs_min_size",
+            False,
+            path=initramfs_path,
+            size=initramfs_size,
+            why=f"initramfs smaller than {MIN_INITRAMFS_BYTES} bytes",
+        )
 
     config_path = os.path.join(boot_fw_dir, "config.txt")
     config_exists = os.path.isfile(config_path)
-    _record("config_present", config_exists, path=config_path)
+    _record(
+        "config_present",
+        config_exists,
+        path=config_path,
+        why=None if config_exists else "config.txt missing",
+    )
     config_line = None
     config_image_path = None
     if config_exists:
@@ -96,6 +137,7 @@ def verify_boot_surface(
             m is not None,
             path=config_path,
             line=config_line,
+            why=None if m else "config.txt missing initramfs followkernel line",
         )
         if m:
             config_image_path = os.path.join(boot_fw_dir, m.group(1))
@@ -103,11 +145,19 @@ def verify_boot_surface(
                 "config_initramfs_exists",
                 os.path.isfile(config_image_path),
                 path=config_image_path,
+                why=None
+                if os.path.isfile(config_image_path)
+                else "initramfs referenced in config.txt missing",
             )
 
     cmdline_path = os.path.join(boot_fw_dir, "cmdline.txt")
     cmdline_exists = os.path.isfile(cmdline_path)
-    _record("cmdline_present", cmdline_exists, path=cmdline_path)
+    _record(
+        "cmdline_present",
+        cmdline_exists,
+        path=cmdline_path,
+        why=None if cmdline_exists else "cmdline.txt missing",
+    )
     cmdline_text = _read(cmdline_path) if cmdline_exists else ""
     if luks_uuid:
         token = f"cryptdevice=UUID={luks_uuid}:cryptroot"
@@ -116,6 +166,7 @@ def verify_boot_surface(
             token in cmdline_text,
             token=token,
             text_preview=cmdline_text.strip(),
+            why=None if token in cmdline_text else "cmdline missing cryptdevice token",
         )
     if expected_root_mapper_suffix:
         mapper_token = f"root=/dev/mapper/{expected_root_mapper_suffix}"
@@ -123,6 +174,7 @@ def verify_boot_surface(
             "cmdline_root_mapper",
             mapper_token in cmdline_text,
             token=mapper_token,
+            why=None if mapper_token in cmdline_text else "cmdline missing root mapper token",
         )
 
     lsinit_out = ""
@@ -131,6 +183,7 @@ def verify_boot_surface(
             ["lsinitramfs", initramfs_path],
             capture_output=True,
             text=True,
+            timeout=360,
         )
         lsinit_ok = proc.returncode == 0
         lsinit_out = proc.stdout if lsinit_ok else proc.stderr
@@ -138,6 +191,7 @@ def verify_boot_surface(
             "lsinitramfs",
             lsinit_ok,
             rc=proc.returncode,
+            why=None if lsinit_ok else "lsinitramfs exited with non-zero status",
         )
         if lsinit_ok:
             lower = lsinit_out.lower()
@@ -148,12 +202,21 @@ def verify_boot_surface(
                 not missing,
                 missing=missing,
                 tokens=required_tokens,
+                why=None if not missing else f"missing tokens: {', '.join(missing)}",
             )
 
     result["initramfs_path"] = initramfs_path
     result["config_line"] = config_line
     result["config_image"] = config_image_path
     return result
+
+
+def require_boot_surface_ok(result: Dict[str, object]) -> Dict[str, object]:
+    """Raise InitramfsVerificationError if verification failed."""
+
+    if result.get("ok"):
+        return result
+    raise InitramfsVerificationError(result)
 
 
 def _canon(path: str) -> str:

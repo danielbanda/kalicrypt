@@ -21,7 +21,7 @@ from .boot_plumbing import (
     write_fstab,
 )
 from .devices import kill_holders, probe, swapoff_all, uuid_of
-from .executil import append_jsonl, run, trace, udev_settle
+from .executil import append_jsonl, resolve_log_path, run, trace, udev_settle
 from .firmware import assert_essentials, populate_esp
 from .initramfs import ensure_packages, rebuild, verify as verify_initramfs
 from .luks_lvm import (
@@ -39,6 +39,7 @@ from .postboot import install_postboot_check as install_postboot_heartbeat
 from .postcheck import cleanup_pycache, run_postcheck
 from .recovery import write_recovery_doc
 from .root_sync import parse_rsync_stats, rsync_root
+from .verification import InitramfsVerificationError, require_boot_surface_ok
 
 RESULT_CODES: Dict[str, int] = {
     "PLAN_OK": 0,
@@ -46,6 +47,7 @@ RESULT_CODES: Dict[str, int] = {
     "ETE_PREBOOT_OK": 0,
     "ETE_DONE_OK": 0,
     "FAIL_SAFETY_GUARD": 2,
+    "FAIL_LIVE_DISK_GUARD": 2,
     "FAIL_MISSING_PASSPHRASE": 2,
     "FAIL_FIRMWARE_CHECK": 3,
     "FAIL_PARTITIONING": 4,
@@ -61,6 +63,69 @@ RESULT_CODES: Dict[str, int] = {
     "FAIL_INVALID_DEVICE": 13,
     "POSTCHECK_OK": 14,
 }
+
+RESULT_LOG_PATH: Optional[str] = None
+_LOG_ANNOUNCED = False
+
+
+def _result_log_path() -> str:
+    global RESULT_LOG_PATH
+    if RESULT_LOG_PATH:
+        return RESULT_LOG_PATH
+    path = resolve_log_path()
+    if not path:
+        base = os.path.expanduser("~/rp5/03_LOGS")
+        try:
+            os.makedirs(base, exist_ok=True)
+        except Exception:
+            pass
+        path = os.path.join(base, "ete_nvme.jsonl")
+    RESULT_LOG_PATH = path
+    return path
+
+
+def _announce_log_path() -> str:
+    global _LOG_ANNOUNCED
+    path = _result_log_path()
+    if not _LOG_ANNOUNCED:
+        print(f"log_path={path}")
+        try:
+            trace("cli.log_path", path=path)
+        except Exception:
+            pass
+        _LOG_ANNOUNCED = True
+    return path
+
+
+def _safety_snapshot(device: str) -> Dict[str, Any]:
+    def _capture(cmd: list[str]) -> str:
+        try:
+            return subprocess.check_output(cmd, text=True).strip()
+        except Exception:
+            return ""
+
+    root_src = _capture(["findmnt", "-no", "SOURCE", "/"]) or ""
+    boot_src = _capture(["findmnt", "-no", "SOURCE", "/boot"]) or ""
+    target_pkname = _capture(["lsblk", "-no", "PKNAME", device]) or ""
+    if not target_pkname:
+        target_pkname = os.path.basename(device).rstrip("0123456789")
+    snapshot = {
+        "root_src": root_src,
+        "boot_src": boot_src,
+        "target_device": device,
+        "target_pkname": target_pkname,
+    }
+    return snapshot
+
+
+def _emit_safety_check(snapshot: Dict[str, Any]) -> None:
+    payload = {"ts": int(time.time()), "event": "SAFETY_CHECK", **snapshot}
+    append_jsonl(_result_log_path(), payload)
+    try:
+        trace("cli.safety_check", **snapshot)
+    except Exception:
+        pass
+    print(f"safety_check={json.dumps(snapshot, sort_keys=True)}")
 
 
 def _log_path(name: str) -> str:
@@ -125,7 +190,7 @@ def _emit_result(
     if not kind.endswith("_OK"):
         meta = _emit_version_stamp(_version_metadata())
         payload["version"] = meta
-    append_jsonl(os.path.expanduser("~/rp5/03_LOGS/ete_nvme.jsonl"), payload)
+    append_jsonl(_result_log_path(), payload)
     print(json.dumps(payload, indent=2))
     code = RESULT_CODES.get(kind, 1) if exit_code is None else exit_code
     raise SystemExit(code)
@@ -177,7 +242,7 @@ def _record_result(kind: str, extra: Optional[Dict[str, Any]] = None) -> Dict[st
     payload: Dict[str, Any] = {"result": kind, "ts": int(time.time())}
     if extra:
         payload.update(extra)
-    append_jsonl(os.path.expanduser("~/rp5/03_LOGS/ete_nvme.jsonl"), payload)
+    append_jsonl(_result_log_path(), payload)
     print(json.dumps(payload, indent=2))
     return payload
 
@@ -550,7 +615,13 @@ def _run_postcheck_only(plan: ProvisionPlan, flags: Flags, passphrase_file: str)
         write_recovery_doc(mounts.mnt, luks_uuid)
 
         cleanup = cleanup_pycache(mounts.mnt)
-        postcheck = run_postcheck(mounts.mnt, luks_uuid, p1_uuid)
+        try:
+            postcheck = run_postcheck(mounts.mnt, luks_uuid, p1_uuid)
+        except InitramfsVerificationError as exc:
+            _emit_result(
+                "FAIL_INITRAMFS_VERIFY",
+                extra={"why": exc.why, "checks": exc.result},
+            )
 
         rec_dir = os.path.expanduser("~/rp5/04_ARTIFACTS/recovery")
         os.makedirs(rec_dir, exist_ok=True)
@@ -613,6 +684,8 @@ def _main_impl(argv: Optional[list[str]] = None) -> int:  # pragma: no cover - e
     mode = "plan" if args.plan else ("dry" if args.dry_run else "full")
     sync_performed = not args.skip_rsync
 
+    _announce_log_path()
+
     try:
         trace(
             "cli.args",
@@ -647,16 +720,23 @@ def _main_impl(argv: Optional[list[str]] = None) -> int:  # pragma: no cover - e
     if not os.path.exists(plan.device):
         _emit_result("FAIL_INVALID_DEVICE", extra={"device": plan.device})
 
+    safety_snapshot = _safety_snapshot(plan.device)
+
     ok, reason = safety.guard_not_live_disk(plan.device)
     if not ok:
-        _emit_result("FAIL_SAFETY_GUARD", extra={"device": plan.device, "reason": reason})
+        extra = dict(safety_snapshot)
+        extra["reason"] = reason or "live disk guard triggered"
+        _emit_result("FAIL_LIVE_DISK_GUARD", extra=extra)
 
-    root_src = os.popen("findmnt -no SOURCE /").read().strip()
+    root_src = safety_snapshot.get("root_src", "")
     if _same_underlying_disk(plan.device, root_src):
-        extra = {"device": plan.device, "root_src": root_src}
+        extra = dict(safety_snapshot)
+        extra["reason"] = "target shares underlying disk with live root"
         if mode == "full":
             extra["holders"] = _holders_snapshot(plan.device)
-        _emit_result("FAIL_SAFETY_GUARD", extra=extra)
+        _emit_result("FAIL_LIVE_DISK_GUARD", extra=extra)
+
+    _emit_safety_check(safety_snapshot)
 
     if mode == "full" and args.skip_rsync:
         _emit_result(
@@ -730,8 +810,21 @@ def _main_impl(argv: Optional[list[str]] = None) -> int:  # pragma: no cover - e
             _emit_result("FAIL_FIRMWARE_CHECK", extra={"error": str(exc)})
 
         pre_sync_snapshot = _pre_sync_snapshot()
-        rsync_result = rsync_root(mounts.mnt, dry_run=False, exclude_boot=True)
-        rsync_meta = _rsync_meta(rsync_result)
+        if flags.skip_rsync:
+            rsync_meta.update(
+                {
+                    "skipped": True,
+                    "exit": None,
+                    "note": "rsync skipped via --skip-rsync",
+                    "summary": {"itemized_sample": [], "counts": {}, "stats": {}},
+                    "stats": {},
+                    "duration_sec": None,
+                }
+            )
+        else:
+            rsync_result = rsync_root(mounts.mnt, dry_run=False, exclude_boot=True)
+            rsync_meta = _rsync_meta(rsync_result)
+        rsync_meta.setdefault("skipped", False)
 
         p1_uuid = uuid_of(dm.p1)
         p2_uuid = uuid_of(dm.p2)
@@ -767,8 +860,13 @@ def _main_impl(argv: Optional[list[str]] = None) -> int:  # pragma: no cover - e
                 extra={"phase": "rebuild", "error": str(exc)},
             )
         boot_surface = verify_initramfs(mounts.esp, luks_uuid=luks_uuid)
-        if not boot_surface.get("ok", False):
-            _emit_result("FAIL_INITRAMFS_VERIFY", extra={"checks": boot_surface})
+        try:
+            boot_surface = require_boot_surface_ok(boot_surface)
+        except InitramfsVerificationError as exc:
+            _emit_result(
+                "FAIL_INITRAMFS_VERIFY",
+                extra={"why": exc.why, "checks": exc.result},
+            )
 
         if flags.do_postcheck:
             try:
@@ -777,6 +875,11 @@ def _main_impl(argv: Optional[list[str]] = None) -> int:  # pragma: no cover - e
                 recovery_doc_path = os.path.join(mounts.mnt, "root", "RP5_RECOVERY.md")
                 cleanup_stats = cleanup_pycache(mounts.mnt)
                 postcheck_report = run_postcheck(mounts.mnt, luks_uuid, p1_uuid)
+            except InitramfsVerificationError as exc:
+                _emit_result(
+                    "FAIL_INITRAMFS_VERIFY",
+                    extra={"why": exc.why, "checks": exc.result},
+                )
             except Exception as exc:  # noqa: BLE001
                 print(f"[WARN] postcheck setup failed: {exc}")
 
