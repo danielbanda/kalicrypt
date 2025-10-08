@@ -3,6 +3,7 @@ import os
 import re
 import shlex
 import subprocess
+from typing import Dict, List, Optional
 
 _PRIVILEGED_BINARIES = {"cryptsetup"}
 
@@ -40,6 +41,119 @@ def _read(path):
             return f.read()
     except Exception as e:
         return f"<read-failed: {e}>"
+
+
+def verify_boot_surface(
+    boot_fw_dir: str,
+    luks_uuid: Optional[str] = None,
+    expected_initramfs: str = "initramfs_2712",
+    expected_root_mapper_suffix: str = "rp5vg-root",
+) -> Dict[str, object]:
+    """Validate firmware + initramfs surface shared between CLI and postcheck."""
+
+    result: Dict[str, object] = {
+        "ok": True,
+        "boot_dir": boot_fw_dir,
+        "checks": {},
+        "errors": [],
+    }
+
+    def _record(name: str, ok: bool, **details) -> None:
+        entry = {"ok": bool(ok), **details}
+        result["checks"][name] = entry
+        if not ok:
+            result["ok"] = False
+            err = {"check": name}
+            err.update(details)
+            result.setdefault("errors", []).append(err)
+
+    if not os.path.isdir(boot_fw_dir):
+        _record("boot_dir_exists", False, path=boot_fw_dir)
+        return result
+    _record("boot_dir_exists", True, path=boot_fw_dir)
+
+    initramfs_path = os.path.join(boot_fw_dir, expected_initramfs)
+    initramfs_exists = os.path.isfile(initramfs_path)
+    initramfs_size = os.path.getsize(initramfs_path) if initramfs_exists else 0
+    _record(
+        "initramfs_2712",
+        initramfs_exists,
+        path=initramfs_path,
+        size=initramfs_size,
+    )
+
+    config_path = os.path.join(boot_fw_dir, "config.txt")
+    config_exists = os.path.isfile(config_path)
+    _record("config_present", config_exists, path=config_path)
+    config_line = None
+    config_image_path = None
+    if config_exists:
+        config_text = _read(config_path)
+        m = re.search(r"^initramfs\s+(\S+)\s+followkernel", config_text, re.M)
+        config_line = m.group(0) if m else None
+        _record(
+            "config_initramfs_followkernel",
+            m is not None,
+            path=config_path,
+            line=config_line,
+        )
+        if m:
+            config_image_path = os.path.join(boot_fw_dir, m.group(1))
+            _record(
+                "config_initramfs_exists",
+                os.path.isfile(config_image_path),
+                path=config_image_path,
+            )
+
+    cmdline_path = os.path.join(boot_fw_dir, "cmdline.txt")
+    cmdline_exists = os.path.isfile(cmdline_path)
+    _record("cmdline_present", cmdline_exists, path=cmdline_path)
+    cmdline_text = _read(cmdline_path) if cmdline_exists else ""
+    if luks_uuid:
+        token = f"cryptdevice=UUID={luks_uuid}:cryptroot"
+        _record(
+            "cmdline_cryptdevice",
+            token in cmdline_text,
+            token=token,
+            text_preview=cmdline_text.strip(),
+        )
+    if expected_root_mapper_suffix:
+        mapper_token = f"root=/dev/mapper/{expected_root_mapper_suffix}"
+        _record(
+            "cmdline_root_mapper",
+            mapper_token in cmdline_text,
+            token=mapper_token,
+        )
+
+    lsinit_out = ""
+    if initramfs_exists:
+        proc = subprocess.run(
+            ["lsinitramfs", initramfs_path],
+            capture_output=True,
+            text=True,
+        )
+        lsinit_ok = proc.returncode == 0
+        lsinit_out = proc.stdout if lsinit_ok else proc.stderr
+        _record(
+            "lsinitramfs",
+            lsinit_ok,
+            rc=proc.returncode,
+        )
+        if lsinit_ok:
+            lower = lsinit_out.lower()
+            required_tokens: List[str] = ["cryptsetup", "lvm"]
+            missing = [tok for tok in required_tokens if tok not in lower]
+            _record(
+                "initramfs_contents",
+                not missing,
+                missing=missing,
+                tokens=required_tokens,
+            )
+
+    result["initramfs_path"] = initramfs_path
+    result["config_line"] = config_line
+    result["config_image"] = config_image_path
+    return result
 
 
 def _canon(path: str) -> str:

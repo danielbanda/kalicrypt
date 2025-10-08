@@ -3,6 +3,8 @@ from __future__ import annotations
 import os
 import re
 
+from .verification import verify_boot_surface
+
 
 def _read(path: str) -> str:
     try:
@@ -12,19 +14,9 @@ def _read(path: str) -> str:
         return ""
 
 
-def _require(path: str):
-    if not os.path.exists(path):
-        raise RuntimeError(f"missing: {path}")
-
-
 def _assert_eq(label: str, a: str, b: str):
     if a != b:
         raise RuntimeError(f"{label} mismatch: {a} != {b}")
-
-
-def _assert_contains(label: str, text: str, needle: str):
-    if needle not in text:
-        raise RuntimeError(f"{label} missing expected token: {needle}")
 
 
 def cleanup_pycache(mnt: str, subdir: str = "home/admin/rp5"):
@@ -78,24 +70,14 @@ def run_postcheck(mnt: str, luks_uuid: str, p1_uuid: str | None = None, verbose:
     _assert_eq("crypttab UUID", crypt_uuid, luks_uuid)
     res["checks"].append({"crypttab": True, "uuid": crypt_uuid})
 
-    # 2) cmdline.txt contains cryptdevice=UUID=... and root mapper
-    cmd = _read(os.path.join(mnt, "boot/firmware/cmdline.txt"))
-    _assert_contains("cmdline", cmd, f"cryptdevice=UUID={luks_uuid}:cryptroot")
-    _assert_contains("cmdline", cmd, "root=/dev/mapper/rp5vg-root")
-    res["checks"].append({"cmdline": True})
+    # 2) boot firmware/initramfs verification
+    boot_fw = os.path.join(mnt, "boot", "firmware")
+    boot_surface = verify_boot_surface(boot_fw, luks_uuid=luks_uuid)
+    res["checks"].append({"boot_surface": boot_surface})
+    if not boot_surface.get("ok", False):
+        raise RuntimeError("boot firmware/initramfs verification failed")
 
-    # 3) initramfs and kernel images present
-    bootdir = os.path.join(mnt)  # temp fix
-    _require(bootdir)
-    has_initramfs = any(name.startswith("initrd") or name.endswith(".img") for name in os.listdir(bootdir))
-    if not has_initramfs:
-        raise RuntimeError("no initramfs found under /boot")
-    has_kernel = any(name.startswith("vmlinuz") or name.startswith("Image") for name in os.listdir(bootdir))
-    if not has_kernel:
-        raise RuntimeError("no kernel image found under /boot")
-    res["checks"].append({"boot_artifacts": True})
-
-    # 4) Optionally validate ESP UUID (if provided)
+    # 3) Optionally validate ESP UUID (if provided)
     if p1_uuid:
         fstab = _read(os.path.join(mnt, "etc/fstab"))
         if fstab:

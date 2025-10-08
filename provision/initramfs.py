@@ -1,25 +1,59 @@
 """Ensure/rebuild/verify initramfs in target root (Phase 2)."""
 import os
 import re
-import subprocess
+from typing import Any, Dict
 
 from .executil import run
+from .verification import verify_boot_surface
 
 REQUIRED_PACKAGES = ("cryptsetup-initramfs", "lvm2", "initramfs-tools")
+APT_TIMEOUT = 600
+INITRAMFS_TIMEOUT = 360
 
 
-def ensure_packages(mnt: str, dry_run: bool = False):
+def ensure_packages(mnt: str, dry_run: bool = False) -> Dict[str, Any]:
     """Install initramfs prerequisites inside the target root if missing."""
 
-    run(["chroot", mnt, "/usr/bin/apt-get", "update"], check=False, dry_run=dry_run)
+    stats: Dict[str, Any] = {"update": {}, "installs": [], "retries": 0}
+    update = run(
+        ["chroot", mnt, "/usr/bin/apt-get", "update"],
+        check=False,
+        dry_run=dry_run,
+        timeout=APT_TIMEOUT,
+    )
+    stats["update"] = {"rc": update.rc, "duration_sec": getattr(update, "duration", None)}
+
     for pkg in REQUIRED_PACKAGES:
-        res = run(["chroot", mnt, "/usr/bin/dpkg", "-s", pkg], check=False, dry_run=dry_run)
-        if res.rc != 0:
-            run(
+        pkg_stats: Dict[str, Any] = {"package": pkg}
+        check_res = run(
+            ["chroot", mnt, "/usr/bin/dpkg", "-s", pkg],
+            check=False,
+            dry_run=dry_run,
+            timeout=APT_TIMEOUT,
+        )
+        pkg_stats.update({
+            "present": check_res.rc == 0,
+            "check_rc": check_res.rc,
+            "check_duration_sec": getattr(check_res, "duration", None),
+        })
+        if check_res.rc != 0:
+            install_res = run(
                 ["chroot", mnt, "/usr/bin/apt-get", "-y", "install", pkg],
                 check=False,
                 dry_run=dry_run,
+                timeout=APT_TIMEOUT,
             )
+            pkg_stats.update(
+                {
+                    "installed": install_res.rc == 0,
+                    "install_rc": install_res.rc,
+                    "install_duration_sec": getattr(install_res, "duration", None),
+                }
+            )
+            if install_res.rc != 0:
+                stats["retries"] += 1
+        stats["installs"].append(pkg_stats)
+    return stats
 
 
 def _ensure_crypttab_prompts(mnt: str) -> None:
@@ -55,28 +89,37 @@ def _detect_kernel_version(mnt: str) -> str:
     return sorted(cands)[0]
 
 
-def rebuild(mnt: str, dry_run: bool = False):
+def rebuild(mnt: str, dry_run: bool = False) -> Dict[str, Any]:
     _ensure_crypttab_prompts(mnt)
     kver = _detect_kernel_version(mnt)
+
+    telemetry: Dict[str, Any] = {"kernel": kver, "attempts": [], "retries": 0}
 
     res = run(
         ["chroot", mnt, "/usr/sbin/update-initramfs", "-c", "-k", kver],
         check=False,
         dry_run=dry_run,
+        timeout=INITRAMFS_TIMEOUT,
     )
+    telemetry["attempts"].append({"mode": "create", "rc": res.rc, "duration_sec": getattr(res, "duration", None)})
     if res.rc != 0:
-        run(
+        telemetry["retries"] += 1
+        res = run(
             ["chroot", mnt, "/usr/sbin/update-initramfs", "-u", "-k", kver],
             check=True,
             dry_run=dry_run,
+            timeout=INITRAMFS_TIMEOUT,
         )
+        telemetry["attempts"].append({"mode": "update", "rc": res.rc, "duration_sec": getattr(res, "duration", None)})
 
-    run(
+    copy_res = run(
         ["chroot", mnt, "/bin/cp", "-f", f"/boot/initrd.img-{kver}", "/boot/firmware/initramfs_2712"],
         check=True,
         dry_run=dry_run,
     )
-    run(
+    telemetry["copy"] = {"rc": copy_res.rc, "duration_sec": getattr(copy_res, "duration", None)}
+
+    list_res = run(
         [
             "chroot",
             mnt,
@@ -86,31 +129,14 @@ def rebuild(mnt: str, dry_run: bool = False):
         check=True,
         dry_run=dry_run,
     )
+    telemetry["list"] = {"rc": list_res.rc, "duration_sec": getattr(list_res, "duration", None)}
+    telemetry["image"] = os.path.join(mnt, "boot", "firmware", "initramfs_2712")
+
+    return telemetry
 
 
-def verify(dst_boot_fw: str) -> str:
-    cfg = os.path.join(dst_boot_fw, 'config.txt')
-    if not os.path.exists(cfg):
-        # write a safe default that references the newest initrd
-        ir = newest_initrd(dst_boot_fw)
-        with open(cfg, 'w', encoding='utf-8') as f: f.write(f"initramfs {os.path.basename(ir)} followkernel\n")
-    with open(cfg, 'r', encoding='utf-8') as f:
-        m = re.search(r'^initramfs\s+([^\s#]+)', f.read(), re.M)
-    if not m:
-        raise RuntimeError("initramfs: config.txt missing initramfs line")
-    ir = os.path.join(dst_boot_fw, m.group(1))
-    if not os.path.isfile(ir) or os.path.getsize(ir) < 131072:
-        raise RuntimeError("initramfs: image missing or too small")
-    # ensure cryptsetup+lvm present
-    out = subprocess.check_output(["lsinitramfs", ir], text=True)
-    out_lower = out.lower()
-    required_tokens = ("cryptsetup", "lvm", "dm-crypt", "nvme")
-    missing = [tok for tok in required_tokens if tok not in out_lower]
-    if missing:
-        raise RuntimeError(
-            "initramfs: missing components in image (%s)" % ", ".join(missing)
-        )
-    return ir
+def verify(dst_boot_fw: str, luks_uuid: str | None = None) -> Dict[str, Any]:
+    return verify_boot_surface(dst_boot_fw, luks_uuid)
 
 
 def newest_initrd(dst_boot_fw: str) -> str:
