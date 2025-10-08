@@ -5,6 +5,33 @@ import pytest
 from provision import verification
 
 
+def test_helper_functions(monkeypatch):
+    monkeypatch.setattr(verification, "_run", lambda cmd, check=False: {"rc": 1, "out": "", "err": ""})
+    assert verification._command_output(["echo", "hi"]) == ""
+
+    monkeypatch.setattr(verification, "_run", lambda cmd, check=False: {"rc": 0, "out": "value\n"})
+    assert verification._command_output(["echo", "ok"]) == "value"
+
+    monkeypatch.setattr(verification.os.path, "realpath", lambda path: (_ for _ in ()).throw(OSError()))
+    assert verification._canon("/tmp/path") == "/tmp/path"
+
+    def fake_open(*args, **kwargs):  # noqa: ANN001
+        raise OSError("boom")
+
+    monkeypatch.setattr("builtins.open", fake_open)
+    assert "<read-failed" in verification._read("/missing")
+
+
+def test_findmnt_source_failure(monkeypatch):
+    monkeypatch.setattr(
+        verification,
+        "_run",
+        lambda cmd, check=True: {"rc": 1, "out": "", "err": ""},
+    )
+    with pytest.raises(RuntimeError):
+        verification._findmnt_source("/mnt")
+
+
 class DummyProcess:
     def __init__(self, rc=0, stdout="", stderr=""):
         self.returncode = rc
@@ -159,3 +186,36 @@ def test_verify_triplet_missing_cryptroot(tmp_path):
             "rp5vg",
             "root",
         )
+
+
+def test_nvme_boot_verification(monkeypatch, tmp_path):
+    runs = []
+
+    def fake_run(cmd, check=False):
+        runs.append(cmd)
+        if cmd[:2] == ["cryptsetup", "luksUUID"]:
+            return {"rc": 0, "out": "abcd", "err": "", "cmd": cmd}
+        return {"rc": 0, "out": "ok", "err": "", "cmd": cmd}
+
+    monkeypatch.setattr(verification, "_run", fake_run)
+
+    mnt_root = "/mnt/nvme"
+    mapping = {
+        f"{mnt_root}/boot/firmware/cmdline.txt": "cryptdevice=UUID=abcd:cryptroot root=/dev/mapper/rp5vg-root rootfstype=ext4 rootwait",
+        f"{mnt_root}/etc/crypttab": "cryptroot UUID=abcd  none",
+        f"{mnt_root}/etc/fstab": "/dev/mapper/rp5vg-root  /  ext4  defaults  0  1\n",
+    }
+    monkeypatch.setattr(verification, "_read", lambda path: mapping.get(path, ""))
+    monkeypatch.setattr(verification.os.path, "exists", lambda path: True)
+    monkeypatch.setattr(verification.os, "makedirs", lambda *args, **kwargs: None)
+
+    result = verification.nvme_boot_verification(
+        "/dev/nvme0n1",
+        passphrase_file=str(tmp_path / "secret"),
+        mnt_root=mnt_root,
+        mnt_esp=str(tmp_path / "esp"),
+    )
+
+    assert result["ok"] is True
+    assert any(step["name"] == "dryrun_open_mount" for step in result["steps"])
+    assert any(cmd[0] == "cryptsetup" for cmd in runs)

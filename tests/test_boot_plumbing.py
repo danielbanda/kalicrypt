@@ -1,4 +1,15 @@
-from provision.boot_plumbing import write_cmdline, write_crypttab, write_fstab
+import os
+
+import pytest
+
+from provision.boot_plumbing import (
+    assert_cmdline_uuid,
+    assert_crypttab_uuid,
+    write_cmdline,
+    write_crypttab,
+    write_fstab,
+    _resolve_root_mapper,
+)
 
 
 def read(path):
@@ -53,3 +64,28 @@ def test_write_crypttab_matches_template(tmp_path):
 
     contents = read(etc_dir / "crypttab")
     assert contents == "cryptroot UUID=uuid-luks  /home/admin/secret.txt\n"
+
+def test_resolve_root_mapper_defaults():
+    assert _resolve_root_mapper(None, None, None) == "/dev/mapper/rp5vg-root"
+    assert _resolve_root_mapper(" /custom ", None, None) == "/custom"
+
+
+def test_assert_cmdline_uuid(tmp_path):
+    esp = tmp_path / "boot" / "firmware"
+    esp.mkdir(parents=True)
+    path = esp / "cmdline.txt"
+    path.write_text("cryptdevice=UUID=abcd:cryptroot root=/dev/mapper/cryptvg-root\n", encoding="utf-8")
+    assert_cmdline_uuid(str(esp), "abcd", root_mapper="/dev/mapper/cryptvg-root")
+    with pytest.raises(RuntimeError):
+        assert_cmdline_uuid(str(esp), "xxxx")
+
+
+def test_assert_crypttab_uuid(tmp_path):
+    etc = tmp_path / "etc"
+    etc.mkdir()
+    ct = etc / "crypttab"
+    ct.write_text("cryptroot UUID=abcd none\n", encoding="utf-8")
+    assert_crypttab_uuid(str(tmp_path), "abcd")
+    ct.write_text("", encoding="utf-8")
+    with pytest.raises(RuntimeError):
+        assert_crypttab_uuid(str(tmp_path), "abcd")

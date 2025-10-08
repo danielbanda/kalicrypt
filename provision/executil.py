@@ -101,7 +101,7 @@ def udev_settle():
         pass
 
 
-def with_backoff(fn, tries: int = 3, base: float = 0.5, max: float = 4.0):
+def with_backoff(fn, tries: int = 3, base: float = 0.5, max_delay: float = 4.0):
     import time
     delay = base
     last = None
@@ -111,7 +111,7 @@ def with_backoff(fn, tries: int = 3, base: float = 0.5, max: float = 4.0):
         except Exception as e:
             last = e
             time.sleep(delay)
-            delay = min(max, delay * 2)
+            delay = min(max_delay, delay * 2)
     raise last
 
 
