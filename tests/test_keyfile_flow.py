@@ -31,11 +31,8 @@ def _make_passphrase(tmp_path) -> str:
     return str(secret)
 
 
-def _patch_macos_chown(monkeypatch) -> None:
-    """Simulate root-owned files on macOS where chown requires privileges."""
-
-    if sys.platform != "darwin":
-        return
+def _patch_fake_root_ownership(monkeypatch) -> None:
+    """Simulate root-owned files when the tests lack privileges."""
 
     fake_owners: Dict[str, Tuple[int, int]] = {}
     orig_stat = luks_lvm.os.stat
@@ -67,7 +64,7 @@ def test_keyfile_is_created_and_permissions_correct(tmp_path, monkeypatch):
     monkeypatch.setattr(luks_lvm.os, "getuid", lambda: 0)
     monkeypatch.setattr(luks_lvm.os, "getgid", lambda: 0)
     monkeypatch.setattr("provision.luks_lvm.test_keyfile_unlock", lambda *_, **__: False)
-    _patch_macos_chown(monkeypatch)
+    _patch_fake_root_ownership(monkeypatch)
 
     meta = ensure_keyfile(
         str(mnt),
@@ -105,7 +102,7 @@ def test_luks_keyslot_added_once_idempotent(tmp_path, monkeypatch):
     monkeypatch.setattr(luks_lvm.os, "getuid", lambda: 0)
     monkeypatch.setattr(luks_lvm.os, "getgid", lambda: 0)
     monkeypatch.setattr("provision.luks_lvm.test_keyfile_unlock", lambda *_, **__: False)
-    _patch_macos_chown(monkeypatch)
+    _patch_fake_root_ownership(monkeypatch)
 
     first = ensure_keyfile(
         str(mnt),
