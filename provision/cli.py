@@ -185,7 +185,6 @@ def _version_metadata() -> Dict[str, Any]:
         "sha_main": _git_rev_parse("HEAD"),
         "sha_cli": _git_rev_parse("HEAD:provision/cli.py"),
         "ts": ts,
-        "branch": "in-mem",
     }
 
 
@@ -214,9 +213,8 @@ def _emit_result(
     payload: Dict[str, Any] = {"result": kind, "ts": int(time.time())}
     if extra:
         payload.update(extra)
-    if not kind.endswith("_OK"):
-        meta = _emit_version_stamp(_version_metadata())
-        payload["version"] = meta
+    version = _emit_version_stamp(_version_metadata())
+    payload["version"] = version
     append_jsonl(_result_log_path(), payload)
     print(json.dumps(payload, sort_keys=True, separators=(",", ":")))
     code = RESULT_CODES.get(kind, 1) if exit_code is None else exit_code
