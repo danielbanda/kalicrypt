@@ -320,7 +320,7 @@ def _record_result(kind: str, extra: Optional[Dict[str, Any]] = None) -> Dict[st
     if extra:
         payload.update(extra)
     append_jsonl(_result_log_path(), payload)
-    print(json.dumps(payload, sort_keys=True, separators=(",", ":")), file=sys.stderr)
+    # print(json.dumps(payload, sort_keys=True, separators=(",", ":")), file=sys.stderr)
     return payload
 
 
