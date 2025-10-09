@@ -8,7 +8,7 @@ import sys
 import time
 from typing import Dict
 
-from .executil import run
+from .executil import run, Result
 
 _SIZE_UNITS = {
     "b": 1,
@@ -169,6 +169,8 @@ def rsync_root(dst_mnt: str, dry_run: bool = False, timeout_sec: int = 360, excl
                 "/mnt/nvme/",
                 ]
             run(cmd2, check=True, dry_run=dry_run, timeout=timeout_sec)
+            if result.rc == 0: # Omit rsync output on success
+                return Result(result.rc, "", "", result.duration)
             return result
         except subprocess.CalledProcessError as e:
             if e.returncode in (23, 24):
