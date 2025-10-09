@@ -166,7 +166,6 @@ def rsync_root(dst_mnt: str, dry_run: bool = False, timeout_sec: int = 360, excl
                 "-aR",
                 "/etc/cryptsetup-keys.d/cryptroot.key",
                 "/etc/cryptsetup-initramfs/conf-hook",
-                "/",
                 "/mnt/nvme/",
                 ]
             run(cmd2, check=True, dry_run=dry_run, timeout=timeout_sec)
