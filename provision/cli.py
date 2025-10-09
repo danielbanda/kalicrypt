@@ -110,11 +110,6 @@ def _announce_log_path() -> str:
                 trace("cli.log_path", path=path)
             except Exception:
                 pass
-            try:
-                print(f"log_path={path}")
-                sys.stdout.flush()
-            except Exception:
-                pass
         _LOG_ANNOUNCED = True
     return path
 
