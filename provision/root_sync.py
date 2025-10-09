@@ -165,7 +165,7 @@ def rsync_root(dst_mnt: str, dry_run: bool = False, timeout_sec: int = 360, excl
         except subprocess.CalledProcessError as e:
             if e.returncode in (23, 24):
                 print(
-                    f"[WARN] rsync completed with return code {e.returncode} (partial transfer/vanished files). Continuing.",
+                    f"[WARN] rsync completed with return code {e.returncode} (partial transfer/vanished files, file=sys.stderr). Continuing.",
                     file=sys.stderr,
                 )
                 e.duration = time.perf_counter() - start_time

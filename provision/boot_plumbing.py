@@ -294,3 +294,30 @@ def assert_crypttab_uuid(mnt: str, luks_uuid: str):
         raise RuntimeError('crypttab missing cryptroot line')
     if m.group(1) != luks_uuid:
         raise RuntimeError('crypttab UUID mismatch')
+
+
+def ensure_initramfs_conf(mnt):
+    try:
+        conf_dir = os.path.join(mnt, 'etc', 'initramfs-tools', 'conf.d')
+        os.makedirs(conf_dir, exist_ok=True)
+        conf_path = os.path.join(conf_dir, 'cryptsetup')
+        with open(conf_path, 'w', encoding='utf-8') as f:
+            f.write('KEYFILE_PATTERN=/etc/cryptsetup-keys.d/*.key\n')
+            f.write('UMASK=0077\n')
+    except Exception as e:
+        raise
+
+
+def ensure_firmware_initramfs_line(fw_config_path, image_name='initramfs_2712'):
+    try:
+        lines = []
+        if os.path.exists(fw_config_path):
+            with open(fw_config_path, 'r', encoding='utf-8', errors='ignore') as f:
+                lines = f.readlines()
+        wanted = f'initramfs {image_name} followkernel\n'
+        if not any(l.strip().startswith('initramfs ') for l in lines):
+            lines.append(wanted)
+            with open(fw_config_path, 'w', encoding='utf-8') as f:
+                f.writelines(lines)
+    except Exception as e:
+        raise
