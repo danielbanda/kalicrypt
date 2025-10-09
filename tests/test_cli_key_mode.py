@@ -66,4 +66,3 @@ def test_require_keyfile_path_rejects_outside_tree(path, monkeypatch):
     monkeypatch.setattr("provision.cli._emit_result", fake_emit)
     with pytest.raises(SystemExit):
         _require_keyfile_path(path)
-

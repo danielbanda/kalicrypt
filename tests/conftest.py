@@ -157,4 +157,3 @@ def _report_coverage(session) -> None:
         write_line(
             f"{'TOTAL':<60} {total_statements:>6} {total_statements - total_covered:>6} {total_pct:>6.1f}%"
         )
-

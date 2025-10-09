@@ -20,8 +20,8 @@ def test_write_crypttab_prefers_keyfile_when_enabled(tmp_path):
 
     contents = ct_path.read_text(encoding="utf-8")
     assert (
-        contents
-        == "cryptroot UUID=uuid-luks  /etc/cryptsetup-keys.d/cryptroot.key  luks,discard\n"
+            contents
+            == "cryptroot UUID=uuid-luks  /etc/cryptsetup-keys.d/cryptroot.key  luks,discard\n"
     )
 
 
@@ -91,4 +91,3 @@ def test_write_crypttab_idempotent(tmp_path, enable):
     second = ct_path.read_text(encoding="utf-8")
 
     assert first == second
-

@@ -115,12 +115,12 @@ def _parse_slot_from_output(streams: Iterable[str]) -> int | None:
 
 
 def ensure_keyfile(
-    mnt: str,
-    keyfile_path: str,
-    luks_device: str,
-    passphrase_file: str,
-    *,
-    rotate: bool = False,
+        mnt: str,
+        keyfile_path: str,
+        luks_device: str,
+        passphrase_file: str,
+        *,
+        rotate: bool = False,
 ) -> Dict[str, Any]:
     """Ensure a keyfile exists on the target root and is enrolled in the LUKS device."""
 

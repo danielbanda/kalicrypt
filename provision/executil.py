@@ -12,7 +12,6 @@ from typing import Sequence
 
 from .paths import rp5_logs_dir
 
-
 LOG_DIRS: list[str] | None = None
 LOG_PATH: str | None = None
 
@@ -99,11 +98,11 @@ def trace(event: str, **fields):
 # --- end TRACE block ---
 
 def run(
-    cmd: Sequence[str],
-    check: bool = True,
-    dry_run: bool = False,
-    timeout: float = 60.0,
-    env: dict | None = None,
+        cmd: Sequence[str],
+        check: bool = True,
+        dry_run: bool = False,
+        timeout: float = 60.0,
+        env: dict | None = None,
 ) -> Result:
     # TRACE: log command start
     try:

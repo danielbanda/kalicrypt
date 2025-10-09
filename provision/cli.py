@@ -8,8 +8,8 @@ import os
 import shlex
 import subprocess
 import sys
-import time
 import tempfile
+import time
 from datetime import datetime, timezone
 from typing import Any, Dict, Optional
 
@@ -42,12 +42,12 @@ from .luks_lvm import (
 from .model import Flags, ProvisionPlan
 from .mounts import mount_targets_safe, bind_mounts, mount_targets, unmount_all
 from .partitioning import apply_layout, verify_layout
+from .paths import rp5_artifacts_dir, rp5_logs_dir
 from .postboot import (
     install_postboot_check as install_postboot_heartbeat,
     remove_postboot_artifacts,
 )
 from .postcheck import cleanup_pycache, run_postcheck
-from .paths import rp5_artifacts_dir, rp5_logs_dir
 from .recovery import write_recovery_doc
 from .root_sync import parse_rsync_stats, rsync_root
 from .verification import InitramfsVerificationError, require_boot_surface_ok
@@ -123,7 +123,7 @@ def _safety_snapshot(device: str) -> Dict[str, Any]:
 
     root_src = _capture(["findmnt", "-no", "SOURCE", "/"]) or ""
     boot_src = (
-        _capture(["findmnt", "-no", "SOURCE", "/boot/firmware"]) or _capture(["findmnt", "-no", "SOURCE", "/boot"]) or ""
+            _capture(["findmnt", "-no", "SOURCE", "/boot/firmware"]) or _capture(["findmnt", "-no", "SOURCE", "/boot"]) or ""
     )
     target_pkname = ""
     raw_pk = _capture(["lsblk", "-no", "PKNAME", device])
@@ -1203,8 +1203,8 @@ def _main_impl(argv: Optional[list[str]] = None) -> int:  # pragma: no cover - e
         if flags.keyfile_auto:
             initramfs_key_meta = verify_keyfile_in_image(mounts.esp, flags.keyfile_path)
             if (
-                initramfs_key_meta.get("rc") != 0
-                or not initramfs_key_meta.get("included")
+                    initramfs_key_meta.get("rc") != 0
+                    or not initramfs_key_meta.get("included")
             ):
                 _emit_result(
                     "FAIL_INITRAMFS_VERIFY",
