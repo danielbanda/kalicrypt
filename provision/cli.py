@@ -36,8 +36,12 @@ from .luks_lvm import (
 from .model import Flags, ProvisionPlan
 from .mounts import mount_targets_safe, bind_mounts, mount_targets, unmount_all
 from .partitioning import apply_layout, verify_layout
-from .postboot import install_postboot_check as install_postboot_heartbeat
+from .postboot import (
+    install_postboot_check as install_postboot_heartbeat,
+    remove_postboot_artifacts,
+)
 from .postcheck import cleanup_pycache, run_postcheck
+from .paths import rp5_artifacts_dir, rp5_logs_dir
 from .recovery import write_recovery_doc
 from .root_sync import parse_rsync_stats, rsync_root
 from .verification import InitramfsVerificationError, require_boot_surface_ok
@@ -75,7 +79,7 @@ def _result_log_path() -> str:
         return RESULT_LOG_PATH
     path = resolve_log_path()
     if not path:
-        base = os.path.expanduser("/home/admin/rp5/03_LOGS")
+        base = rp5_logs_dir()
         try:
             os.makedirs(base, exist_ok=True)
         except Exception:
@@ -110,15 +114,26 @@ def _safety_snapshot(device: str) -> Dict[str, Any]:
             return ""
 
     root_src = _capture(["findmnt", "-no", "SOURCE", "/"]) or ""
-    boot_src = _capture(["findmnt", "-no", "SOURCE", "/boot"]) or ""
-    target_pkname = _capture(["lsblk", "-no", "PKNAME", device]) or ""
+    boot_src = (
+        _capture(["findmnt", "-no", "SOURCE", "/boot/firmware"]) or _capture(["findmnt", "-no", "SOURCE", "/boot"]) or ""
+    )
+    target_pkname_raw = _capture(["lsblk", "-no", "PKNAME", device]) or ""
+    target_pkname = ""
+    if target_pkname_raw:
+        for line in target_pkname_raw.splitlines():
+            candidate = line.strip()
+            if candidate:
+                target_pkname = candidate
+                break
     if not target_pkname:
         target_pkname = os.path.basename(device).rstrip("0123456789")
+    same_disk = _same_underlying_disk(device, root_src)
     snapshot = {
         "root_src": root_src,
         "boot_src": boot_src,
         "target_device": device,
         "target_pkname": target_pkname,
+        "same_underlying_disk": same_disk,
     }
     return snapshot
 
@@ -138,7 +153,7 @@ def _emit_safety_check(snapshot: Dict[str, Any]) -> None:
 
 
 def _log_path(name: str) -> str:
-    base = os.path.expanduser("/home/admin/rp5/03_LOGS")
+    base = rp5_logs_dir()
     try:
         os.makedirs(base, exist_ok=True)
     except Exception:
@@ -171,7 +186,7 @@ def _version_metadata() -> Dict[str, Any]:
 
 
 def _emit_version_stamp(meta: Dict[str, Any]) -> Dict[str, Any]:
-    base = os.path.expanduser("/home/admin/rp5/03_LOGS")
+    base = rp5_logs_dir()
     os.makedirs(base, exist_ok=True)
     path = os.path.join(base, f"{meta['ts']}.ver")
     try:
@@ -314,17 +329,20 @@ def _plan_payload(
     except Exception:
         pass
     state["same_underlying_disk"] = _same_underlying_disk(plan.device, root_src)
+    root_mapper = dm.root_lv_path or f"/dev/mapper/{dm.vg}-{dm.lv}"
+    device_map = dict(vars(dm))
+    device_map["root_lv_path"] = root_mapper
     plan_block = {
         "device": plan.device,
         "esp_mb": plan.esp_mb,
         "boot_mb": plan.boot_mb,
         "passphrase_file": plan.passphrase_file,
-        "device_map": vars(dm),
+        "device_map": device_map,
         "detected": {
             "vg": dm.vg,
             "lv": dm.lv,
-            "root_lv_path": dm.root_lv_path,
-            "root_mapper": dm.root_lv_path or f"/dev/mapper/{dm.vg}-{dm.lv}",
+            "root_lv_path": root_mapper,
+            "root_mapper": root_mapper,
         },
     }
     payload: Dict[str, Any] = {
@@ -409,15 +427,11 @@ def _rsync_meta(res: Any) -> Dict[str, Any]:
     out_text = meta.get("out") or ""
     summary = _rsync_summarize(out_text)
     stats = parse_rsync_stats(out_text)
-    required_keys = ("files_transferred", "total_file_size", "throughput_line", "speedup")
     summary_stats = summary.setdefault("stats", {})
-    meta_stats = {}
-    for key in required_keys:
-        value = stats.get(key)
+    for key, value in stats.items():
         summary_stats.setdefault(key, value)
-        meta_stats[key] = value
     meta["summary"] = summary
-    meta["stats"] = meta_stats
+    meta["stats"] = stats
     return meta
 
 
@@ -687,7 +701,7 @@ def _run_postcheck_only(
                 extra={"why": exc.why, "checks": exc.result},
             )
 
-        rec_dir = os.path.expanduser("/home/admin/rp5/04_ARTIFACTS/recovery")
+        rec_dir = os.path.join(rp5_artifacts_dir(), "recovery")
         os.makedirs(rec_dir, exist_ok=True)
         rec = {
             "device": plan.device,
@@ -787,6 +801,10 @@ def _main_impl(argv: Optional[list[str]] = None) -> int:  # pragma: no cover - e
         _emit_result("FAIL_INVALID_DEVICE", extra={"device": plan.device})
 
     safety_snapshot = _safety_snapshot(plan.device)
+    same_disk = safety_snapshot.get("same_underlying_disk")
+    if same_disk is None:
+        same_disk = _same_underlying_disk(plan.device, safety_snapshot.get("root_src", ""))
+    same_disk = bool(same_disk)
     _emit_safety_check(safety_snapshot)
 
     ok, reason = safety.guard_not_live_disk(plan.device)
@@ -796,7 +814,7 @@ def _main_impl(argv: Optional[list[str]] = None) -> int:  # pragma: no cover - e
         _emit_result("FAIL_LIVE_DISK_GUARD", extra=extra)
 
     root_src = safety_snapshot.get("root_src", "")
-    if _same_underlying_disk(plan.device, root_src):
+    if same_disk:
         extra = dict(safety_snapshot)
         extra["reason"] = "target shares underlying disk with live root"
         if mode == "full":
@@ -867,6 +885,7 @@ def _main_impl(argv: Optional[list[str]] = None) -> int:  # pragma: no cover - e
     packages_meta: Optional[Dict[str, Any]] = None
     rebuild_meta: Optional[Dict[str, Any]] = None
     boot_surface: Optional[Dict[str, Any]] = None
+    postcheck_pruned: Optional[Dict[str, Any]] = None
     try:
         try:
             populate_esp(mounts.esp, preserve_cmdline=True, preserve_config=True, dry_run=False)
@@ -934,6 +953,8 @@ def _main_impl(argv: Optional[list[str]] = None) -> int:  # pragma: no cover - e
                 extra={"why": exc.why, "checks": exc.result},
             )
 
+        postcheck_pruned = remove_postboot_artifacts(mounts.mnt)
+
         if flags.do_postcheck:
             try:
                 heartbeat_meta = install_postboot_heartbeat(mounts.mnt)
@@ -982,7 +1003,7 @@ def _main_impl(argv: Optional[list[str]] = None) -> int:  # pragma: no cover - e
         "detected": {
             "vg": dm.vg,
             "lv": dm.lv,
-            "root_lv_path": dm.root_lv_path,
+            "root_lv_path": root_mapper_path,
             "root_mapper": root_mapper_path,
         },
         "pre_sync": pre_sync_snapshot,
@@ -1008,6 +1029,7 @@ def _main_impl(argv: Optional[list[str]] = None) -> int:  # pragma: no cover - e
             "recovery_doc": recovery_doc_meta,
             "report": postcheck_report,
             "cleanup": cleanup_stats,
+            "pruned": postcheck_pruned,
         },
         "timing": {
             "rsync": {
@@ -1018,6 +1040,7 @@ def _main_impl(argv: Optional[list[str]] = None) -> int:  # pragma: no cover - e
             "initramfs": _timing_from_rebuild(rebuild_meta),
         },
         "steps": planned_steps,
+        "same_underlying_disk": same_disk,
     }
     if not flags.do_postcheck:
         result_payload["postcheck"]["offer"] = "--do-postcheck"

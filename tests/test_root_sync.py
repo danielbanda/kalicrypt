@@ -19,7 +19,12 @@ Speedup is 5.00
 """
     stats = root_sync.parse_rsync_stats(text)
     assert stats["files_transferred"] == 5
-    assert "speedup" in stats
+    assert stats["speedup"] == 5.0
+    assert stats["total_file_size_bytes"] == 1_320_702_444
+    assert stats["transferred_size_bytes"] == 536_870_912
+    assert stats["throughput_bytes_per_sec"] == 300.0
+    assert stats["bytes_sent_bytes"] == 20_971_520
+    assert stats["bytes_received_bytes"] == 5_242_880
 
 
 def test_rsync_root_with_rsync(monkeypatch):
