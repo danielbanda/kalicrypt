@@ -64,12 +64,12 @@ def close_luks(name: str, dry_run: bool = False):
 def _ensure_dir_secure(path: str) -> None:
     os.makedirs(path, exist_ok=True)
     try:
-        os.chmod(path, 0o700)
+        os.chmod(path, 0o750)
     except Exception:
         pass
     st = os.stat(path)
-    if stat.S_IMODE(st.st_mode) != 0o700:
-        raise PermissionError(f"directory {path} must have mode 0700")
+    if stat.S_IMODE(st.st_mode) != 0o750:
+        raise PermissionError(f"directory {path} must have mode 0750")
     if st.st_uid != 0 or st.st_gid != 0:
         try:
             os.chown(path, 0, 0)
