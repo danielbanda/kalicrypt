@@ -141,8 +141,9 @@ def rebuild(target: str, dry_run: bool = False, *, force_prompt: bool = True) ->
     else:
         image_path = os.path.abspath(target)
         firmware_dir = os.path.dirname(image_path)
-        if os.path.basename(firmware_dir) != "firmware":
-            raise RuntimeError("initramfs: expected image under /boot/firmware")
+        #if os.path.basename(firmware_dir) != "firmware":
+        if firmware_dir != "/mnt/nvme/boot/firmware":
+            raise RuntimeError("initramfs: expected image under /mnt/nvme/boot/firmware")
         boot_dir = os.path.dirname(firmware_dir)
         mnt = os.path.dirname(boot_dir)
         if not mnt:
