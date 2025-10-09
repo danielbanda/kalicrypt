@@ -1227,16 +1227,6 @@ def _main_impl(argv: Optional[list[str]] = None) -> int:  # pragma: no cover - e
                 },
             )
 
-        if flags.keyfile_auto:
-            try:
-                write_initramfs_conf(mounts.mnt)
-                append_jsonl(_result_log_path(), { "the_update" : {"mounts_mnt": mounts.mnt, "initramfs_image_path": initramfs_image_path} } )
-            except Exception as exc:  # noqa: BLE001
-                _emit_result(
-                    "WRITE_INITRAMFS_CONF_FAAAAAIIIIIIILLLLLL",
-                    extra={"phase": "initramfs_conf", "error": str(exc)},
-                )
-
         try:
             packages_meta = ensure_packages(mounts.mnt)
         except Exception as exc:  # noqa: BLE001
@@ -1247,9 +1237,11 @@ def _main_impl(argv: Optional[list[str]] = None) -> int:  # pragma: no cover - e
         try:
             rebuild_target = initramfs_image_path or mounts.mnt
             rebuild_meta = rebuild(rebuild_target, force_prompt=not flags.keyfile_auto)
+            write_initramfs_conf(mounts.mnt)
+            append_jsonl(_result_log_path(), { "the_update" : {"mounts_mnt": mounts.mnt } } )
         except Exception as exc:  # noqa: BLE001
             _emit_result(
-                "FAIL_INITRAMFS_VERIFY",
+                "WRITE_INITRAMFS_CONF_FAAAAAIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIILLLLLL",
                 extra={"phase": "rebuild", "error": str(exc)},
             )
         if flags.keyfile_auto:

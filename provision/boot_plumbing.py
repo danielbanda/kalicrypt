@@ -156,16 +156,17 @@ def write_initramfs_conf(mnt: str, keyfile_pattern: str = "/etc/cryptsetup-keys.
     try:
         current = open(path, "r", encoding="utf-8").read()
     except FileNotFoundError:
-        current = None
-    if current == desired:
-        return
+        raise
+    #     current = None
+    # if current == desired:
+    #     return
     with open(path, "w", encoding="utf-8") as fh:
         fh.write(desired)
         try:
             fh.flush()
             os.fsync(fh.fileno())
         except Exception:
-            pass
+            raise
 
 
 def _resolve_root_mapper(root_mapper: str | None, vg: str | None, lv: str | None) -> str:
