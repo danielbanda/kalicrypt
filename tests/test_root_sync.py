@@ -64,8 +64,6 @@ def test_rsync_root_partial_warning(monkeypatch):
 
 
 def test_rsync_with_fallback(monkeypatch, tmp_path):
-    calls = {"ran": False}
-
     class Proc:
         def __init__(self, rc):
             self.returncode = rc

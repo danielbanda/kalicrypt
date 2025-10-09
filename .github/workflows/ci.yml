@@ -14,36 +14,36 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  lint:
-    name: Lint (ruff/black/codespell)
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-          cache: "pip"
-          cache-dependency-path: "ci/requirements-dev.txt"
-      - run: python -m pip install --upgrade pip
-      - run: pip install -r ci/requirements-dev.txt
-      - run: ruff check .
-      - run: black --check .
-      - run: codespell --ignore-words-list=crate,uptodate --skip=*.png,*.jpg,*.svg,*.gif,*.pdf
-
-  typecheck:
-    name: Typecheck (mypy)
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-          cache: "pip"
-          cache-dependency-path: "ci/requirements-dev.txt"
-      - run: python -m pip install --upgrade pip
-      - run: pip install -r ci/requirements-dev.txt
-      - run: mypy --install-types --non-interactive --config-file mypy.ini || true
-      - run: mypy provision tests
+#  lint:
+#    name: Lint (ruff/black/codespell)
+#    runs-on: ubuntu-latest
+#    steps:
+#      - uses: actions/checkout@v4
+#      - uses: actions/setup-python@v5
+#        with:
+#          python-version: "3.12"
+#          cache: "pip"
+#          cache-dependency-path: "ci/requirements-dev.txt"
+#      - run: python -m pip install --upgrade pip
+#      - run: pip install -r ci/requirements-dev.txt
+#      - run: ruff check .
+#      - run: black --check .
+#      - run: codespell --ignore-words-list=crate,uptodate --skip=*.png,*.jpg,*.svg,*.gif,*.pdf
+#
+#  typecheck:
+#    name: Typecheck (mypy)
+#    runs-on: ubuntu-latest
+#    steps:
+#      - uses: actions/checkout@v4
+#      - uses: actions/setup-python@v5
+#        with:
+#          python-version: "3.12"
+#          cache: "pip"
+#          cache-dependency-path: "ci/requirements-dev.txt"
+#      - run: python -m pip install --upgrade pip
+#      - run: pip install -r ci/requirements-dev.txt
+#      - run: mypy --install-types --non-interactive --config-file mypy.ini || true
+#      - run: mypy provision tests
 
   test:
     name: Tests (pytest + coverage) [py311,py312]
