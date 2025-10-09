@@ -70,3 +70,6 @@ jobs:
             coverage.xml
             .pytest_cache
             .coverage
+    env:
+      COVERAGE_PROCESS_START: .coveragerc
+      PYTHONPATH: tests  # so _sitecustomize is importable
