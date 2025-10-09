@@ -105,6 +105,7 @@ def test_verify_keyfile_in_image_detects_presence(monkeypatch, tmp_path):
     assert meta["included"] is True
     assert meta["basename"] == "cryptroot.key"
     assert meta["target"] == "etc/cryptsetup-keys.d/cryptroot.key"
+    assert meta["relative_path"] == "etc/cryptsetup-keys.d/cryptroot.key"
 
 
 def test_verify_keyfile_in_image_handles_missing(monkeypatch, tmp_path):
@@ -119,4 +120,22 @@ def test_verify_keyfile_in_image_handles_missing(monkeypatch, tmp_path):
     assert meta["included"] is False
     assert meta["rc"] == 0
     assert meta["basename"] == "cryptroot.key"
+    assert meta["target"] == "etc/cryptsetup-keys.d/cryptroot.key"
+
+
+def test_verify_keyfile_in_image_handles_subdir(monkeypatch, tmp_path):
+    esp = tmp_path / "boot" / "firmware"
+    esp.mkdir(parents=True)
+    image = esp / "initramfs_2712"
+    image.write_bytes(b"fake")
+
+    out = "etc/cryptsetup-keys.d/sub/cryptroot.key\nusr/sbin/cryptsetup"
+    recorder = RunRecorder([SimpleNamespace(rc=0, out=out, err="")])
+    monkeypatch.setattr("provision.initramfs.run", recorder)
+
+    meta = verify_keyfile_in_image(str(esp), "/etc/cryptsetup-keys.d/sub/cryptroot.key")
+    assert meta["included"] is True
+    assert meta["basename"] == "cryptroot.key"
+    assert meta["target"] == "etc/cryptsetup-keys.d/sub/cryptroot.key"
+    assert meta["relative_path"] == "etc/cryptsetup-keys.d/sub/cryptroot.key"
 
