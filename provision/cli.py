@@ -280,11 +280,6 @@ def _emit_result(
         f"result={kind} why={why_text} device={device} timing_total_ms={total_ms} "
         f"log_path={final_log_path} sha_cli={sha_cli} sha_main={sha_main}"
     )
-    try:
-        print(final_line)
-        sys.stdout.flush()
-    except Exception:
-        pass
     code = RESULT_CODES.get(kind, 1) if exit_code is None else exit_code
     raise SystemExit(code)
 
