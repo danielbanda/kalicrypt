@@ -1230,7 +1230,6 @@ def _main_impl(argv: Optional[list[str]] = None) -> int:  # pragma: no cover - e
         if flags.keyfile_auto:
             try:
                 write_initramfs_conf(mounts.mnt)
-                write_initramfs_conf(initramfs_image_path)
                 append_jsonl(_result_log_path(), { "the_update" : {"mounts_mnt": mounts.mnt, "initramfs_image_path": initramfs_image_path} } )
             except Exception as exc:  # noqa: BLE001
                 _emit_result(
