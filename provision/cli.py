@@ -1405,9 +1405,9 @@ def _main_impl(argv: Optional[list[str]] = None) -> int:  # pragma: no cover - e
         },
         "steps": planned_steps,
         "same_underlying_disk": same_disk,
+        "device": plan.device,
+        "keyfile": keyfile_meta
     }
-    result_payload["device"] = plan.device
-    result_payload["keyfile"] = keyfile_meta
     if key_rotation_meta:
         result_payload["key_rotation"] = key_rotation_meta
     if flags.keyfile_auto:
@@ -1419,9 +1419,7 @@ def _main_impl(argv: Optional[list[str]] = None) -> int:  # pragma: no cover - e
     )
     if not flags.do_postcheck:
         result_payload["postcheck"]["offer"] = "--do-postcheck"
-    result_payload.setdefault("timing", {})["total_ms"] = int(
-        max(0.0, (time.perf_counter() - CLI_START_MONO) * 1000)
-    )
+        result_payload.setdefault("timing", {})["total_ms"] = int(max(0.0, (time.perf_counter() - CLI_START_MONO) * 1000))
     artifact_path = _write_json_artifact("full", result_payload)
     result_payload["artifact"] = artifact_path
     preboot_payload = dict(result_payload)

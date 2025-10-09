@@ -155,7 +155,7 @@ def rsync_root(dst_mnt: str, dry_run: bool = False, timeout_sec: int = 360, excl
         for e in EXCLUDES:
             base += ["--exclude", e]
         if exclude_boot:
-            for e in ("/boot", "/boot/", "/boot/*", "/boot/firmware", "/boot/firmware/*"):
+            for e in ("/boot", "/boot/", "/boot/*", "/boot/firmware", "/boot/firmware/*", "home/admin/*"):
                 base += ["--exclude", e]
         cmd = base + ["/", dst]
         try:
