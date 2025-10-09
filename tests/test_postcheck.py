@@ -18,7 +18,7 @@ def test_cleanup_pycache(tmp_path):
 def test_run_postcheck_success(tmp_path, monkeypatch):
     etc = tmp_path / "etc"
     etc.mkdir()
-    (etc / "crypttab").write_text("cryptroot UUID=abcd none\n", encoding="utf-8")
+    (etc / "crypttab").write_text("cryptroot UUID=abcd none  luks\n", encoding="utf-8")
     (etc / "fstab").write_text("UUID=esp /boot/firmware vfat\n", encoding="utf-8")
 
     recovery_doc = tmp_path / "root" / "RP5_RECOVERY.md"
@@ -65,7 +65,7 @@ def test_run_postcheck_initramfs_failure(tmp_path, monkeypatch):
     mnt = tmp_path
     etc = mnt / "etc"
     etc.mkdir()
-    (etc / "crypttab").write_text("cryptroot UUID=abcd none\n", encoding="utf-8")
+    (etc / "crypttab").write_text("cryptroot UUID=abcd none  luks\n", encoding="utf-8")
     (etc / "fstab").write_text("UUID=esp /boot/firmware vfat\n", encoding="utf-8")
 
     recovery_doc = mnt / "root" / "RP5_RECOVERY.md"

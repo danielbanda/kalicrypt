@@ -21,15 +21,71 @@ def write_fstab(mnt: str, p1_uuid: str, p2_uuid: str):
             pass
 
 
-def write_crypttab(mnt: str, luks_uuid: str, passfile: str | None, keyscript_path: str | None = None):
+_KEYFILE_ROOT = "/etc/cryptsetup-keys.d"
+
+
+def _normalize_keyfile_path(path: str | None) -> str | None:
+    if path is None:
+        return None
+    normalized = os.path.normpath(path)
+    if not normalized.startswith("/"):
+        normalized = "/" + normalized.lstrip("/")
+    return normalized
+
+
+def _validate_keyfile_path(path: str | None) -> str | None:
+    if path is None:
+        return None
+    normalized = _normalize_keyfile_path(path)
+    if normalized is None:
+        return None
+    allowed_root = os.path.normpath(_KEYFILE_ROOT)
+    candidate = os.path.normpath(normalized)
+    if candidate == allowed_root:
+        raise ValueError("keyfile path must include a filename under /etc/cryptsetup-keys.d")
+    if not candidate.startswith(allowed_root + os.sep) and candidate != allowed_root:
+        raise ValueError("keyfile path must reside under /etc/cryptsetup-keys.d")
+    return candidate
+
+
+def write_crypttab(
+        mnt: str,
+        luks_uuid: str,
+        passfile: str | None,
+        keyscript_path: str | None = None,
+        *,
+        keyfile_path: str | None = None,
+        enable_keyfile: bool = False,
+):
     ct = os.path.join(mnt, 'etc/crypttab')
     os.makedirs(os.path.dirname(ct), exist_ok=True)
-    key = passfile if passfile else 'none'
+    existing = ""
+    if os.path.isfile(ct):
+        try:
+            with open(ct, 'r', encoding='utf-8') as fh:
+                existing = fh.read()
+        except Exception:
+            existing = ""
+
+    desired_key: str
+    if enable_keyfile:
+        normalized_key = _validate_keyfile_path(keyfile_path)
+        if not normalized_key:
+            raise ValueError("keyfile path required when enable_keyfile=True")
+        desired_key = normalized_key
+    elif passfile:
+        desired_key = passfile
+    else:
+        desired_key = 'none'
     if keyscript_path:
-        key = f"{key} keyscript={keyscript_path}"
-    line = f"cryptroot UUID={luks_uuid}  {key}\n"
+        desired_key = f"{desired_key} keyscript={keyscript_path}"
+
+    desired_line = f"cryptroot UUID={luks_uuid}  {desired_key}  luks\n"
+    if existing.strip() == desired_line.strip():
+        return
+
     with open(ct, 'w', encoding='utf-8') as f:
-        f.write(line)
+        f.write(desired_line)
         try:
             f.flush()
             os.fsync(f.fileno())
