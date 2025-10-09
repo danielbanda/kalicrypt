@@ -10,6 +10,10 @@ class Flags:
     do_postcheck: bool = False
     tpm_keyscript: bool = False
     assume_yes: bool = False
+    keyfile_auto: bool = False
+    keyfile_path: str = "/etc/cryptsetup-keys.d/cryptroot.key"
+    keyfile_rotate: bool = False
+    remove_passphrase: bool = False
 
 
 @dataclass

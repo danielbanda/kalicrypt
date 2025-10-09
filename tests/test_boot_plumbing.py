@@ -62,7 +62,7 @@ def test_write_crypttab_matches_template(tmp_path):
     write_crypttab(str(root), "uuid-luks", "/home/admin/secret.txt")
 
     contents = read(etc_dir / "crypttab")
-    assert contents == "cryptroot UUID=uuid-luks  /home/admin/secret.txt\n"
+    assert contents == "cryptroot UUID=uuid-luks  /home/admin/secret.txt  luks\n"
 
 
 def test_resolve_root_mapper_defaults():
@@ -84,7 +84,7 @@ def test_assert_crypttab_uuid(tmp_path):
     etc = tmp_path / "etc"
     etc.mkdir()
     ct = etc / "crypttab"
-    ct.write_text("cryptroot UUID=abcd none\n", encoding="utf-8")
+    ct.write_text("cryptroot UUID=abcd none  luks\n", encoding="utf-8")
     assert_crypttab_uuid(str(tmp_path), "abcd")
     ct.write_text("", encoding="utf-8")
     with pytest.raises(RuntimeError):

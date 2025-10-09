@@ -24,7 +24,7 @@ def test_ensure_packages_installs_missing(monkeypatch):
 def test_ensure_crypttab_prompts(tmp_path):
     ct = tmp_path / "etc" / "crypttab"
     ct.parent.mkdir()
-    ct.write_text("cryptroot UUID=abcd /keyfile\n", encoding="utf-8")
+    ct.write_text("cryptroot UUID=abcd /keyfile  luks\n", encoding="utf-8")
     initramfs._ensure_crypttab_prompts(str(tmp_path))
     assert "none" in ct.read_text(encoding="utf-8")
 
