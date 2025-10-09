@@ -130,11 +130,11 @@ def _emit_safety_check(snapshot: Dict[str, Any]) -> None:
         trace("cli.safety_check", **snapshot)
     except Exception:
         pass
-    try:
-        print(f"safety_check={json.dumps(snapshot, sort_keys=True)}")
-        sys.stdout.flush()
-    except Exception:
-        pass
+    # try:
+    #     print(f"safety_check={json.dumps(snapshot, sort_keys=True)}")
+    #     sys.stdout.flush()
+    # except Exception:
+    #     pass
 
 
 def _log_path(name: str) -> str:
