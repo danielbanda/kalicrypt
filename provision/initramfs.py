@@ -133,6 +133,17 @@ def _detect_kernel_version(mnt: str) -> str:
 
 
 def rebuild(target: str, dry_run: bool = False, *, force_prompt: bool = True) -> Dict[str, Any]:
+    import os, time
+
+    def _tails(res):
+        return {
+            "rc": getattr(res, "rc", None),
+            "duration_sec": getattr(res, "duration", None),
+            "stdout_tail": (getattr(res, "stdout", "") or "")[-400:],
+            "stderr_tail": (getattr(res, "stderr", "") or "")[-400:],
+        }
+
+    # Resolve mnt / image
     if os.path.isdir(target):
         mnt = target
         image_name = "initramfs_2712"
@@ -153,47 +164,44 @@ def rebuild(target: str, dry_run: bool = False, *, force_prompt: bool = True) ->
         _ensure_crypttab_prompts(mnt)
     kver = _detect_kernel_version(mnt)
 
-    telemetry: Dict[str, Any] = {"kernel": kver, "attempts": [], "retries": 0}
+    telemetry: Dict[str, Any] = {
+        "kernel": kver,
+        "attempts": [],
+        "retries": 0,
+        "input": {"target": target, "dry_run": dry_run, "force_prompt": force_prompt},
+        "resolved": {"mnt": mnt, "firmware_dir": firmware_dir, "image_name": image_name, "image_path": image_path},
+        "prechecks": {
+            "mnt_exists": os.path.isdir(mnt),
+            "firmware_dir_exists": os.path.isdir(firmware_dir),
+            "initrd_exists": os.path.isfile(os.path.join(mnt, "boot", f"initrd.img-{kver}")),
+        },
+        "ts_start": time.time(),
+    }
 
-    res = run(
-        ["chroot", mnt, "/usr/sbin/update-initramfs", "-c", "-k", kver],
-        check=False,
-        dry_run=dry_run,
-        timeout=INITRAMFS_TIMEOUT,
-    )
-    telemetry["attempts"].append({"mode": "create", "rc": res.rc, "duration_sec": getattr(res, "duration", None)})
+    # create → update
+    argv_create = ["chroot", mnt, "/usr/sbin/update-initramfs", "-c", "-k", kver]
+    res = run(argv_create, check=False, dry_run=dry_run, timeout=INITRAMFS_TIMEOUT)
+    telemetry["attempts"].append({"mode": "create", "argv": argv_create, **_tails(res)})
+
     if res.rc != 0:
         telemetry["retries"] += 1
-        res = run(
-            ["chroot", mnt, "/usr/sbin/update-initramfs", "-u", "-k", kver],
-            check=True,
-            dry_run=dry_run,
-            timeout=INITRAMFS_TIMEOUT,
-        )
-        telemetry["attempts"].append({"mode": "update", "rc": res.rc, "duration_sec": getattr(res, "duration", None)})
+        argv_update = ["chroot", mnt, "/usr/sbin/update-initramfs", "-u", "-k", kver]
+        res = run(argv_update, check=True, dry_run=dry_run, timeout=INITRAMFS_TIMEOUT)
+        telemetry["attempts"].append({"mode": "update", "argv": argv_update, **_tails(res)})
 
-    copy_res = run(
-        ["chroot", mnt, "/bin/cp", "-f", f"/boot/initrd.img-{kver}", f"/boot/firmware/{image_name}"],
-        check=True,
-        dry_run=dry_run,
-        timeout=INITRAMFS_TIMEOUT,
-    )
-    telemetry["copy"] = {"rc": copy_res.rc, "duration_sec": getattr(copy_res, "duration", None)}
+    # copy → list
+    argv_cp = ["chroot", mnt, "/bin/cp", "-f", f"/boot/initrd.img-{kver}", f"/boot/firmware/{image_name}"]
+    copy_res = run(argv_cp, check=True, dry_run=dry_run, timeout=INITRAMFS_TIMEOUT)
+    telemetry["copy"] = {"argv": argv_cp, **_tails(copy_res)}
 
-    list_res = run(
-        [
-            "chroot",
-            mnt,
-            "/usr/bin/lsinitramfs",
-            f"/boot/firmware/{image_name}",
-        ],
-        check=True,
-        dry_run=dry_run,
-        timeout=INITRAMFS_TIMEOUT,
-    )
-    telemetry["list"] = {"rc": list_res.rc, "duration_sec": getattr(list_res, "duration", None)}
+    argv_ls = ["chroot", mnt, "/usr/bin/lsinitramfs", f"/boot/firmware/{image_name}"]
+    list_res = run(argv_ls, check=True, dry_run=dry_run, timeout=INITRAMFS_TIMEOUT)
+    telemetry["list"] = {"argv": argv_ls, **_tails(list_res)}
+
     telemetry["image"] = os.path.join(mnt, "boot", "firmware", image_name)
     telemetry["requested_image"] = image_path
+    telemetry["ts_end"] = time.time()
+    telemetry["duration_total_sec"] = telemetry["ts_end"] - telemetry["ts_start"]
 
     return telemetry
 
