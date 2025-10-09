@@ -3,9 +3,6 @@ branch = True
 parallel = True
 source = provision
 concurrency = multiprocessing,thread
-omit =
-    tests/*
-    */__main__.py
 
 [report]
 exclude_lines =
