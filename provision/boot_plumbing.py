@@ -92,10 +92,10 @@ def _line_lookup(lines: Iterable[str]) -> dict[str, str]:
 
 
 def write_config(
-    dst_boot_fw: str,
-    initramfs_image: str = "initramfs_2712",
-    kernel_image: str = "vmlinuz",
-    device_tree: str = "bcm2712-rpi-5-b.dtb",
+        dst_boot_fw: str,
+        initramfs_image: str = "initramfs_2712",
+        kernel_image: str = "vmlinuz",
+        device_tree: str = "bcm2712-rpi-5-b.dtb",
 ):
     path = os.path.join(dst_boot_fw, "config.txt")
     os.makedirs(dst_boot_fw, exist_ok=True)

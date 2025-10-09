@@ -177,7 +177,6 @@ def _emit_version_stamp(meta: Dict[str, Any]) -> Dict[str, Any]:
     try:
         with open(path, "w", encoding="utf-8") as fh:
             json.dump(meta, fh, indent=2)
-        #print(f"version_stamp={path}")
         enriched = dict(meta)
         enriched["path"] = path
         return enriched
@@ -289,10 +288,10 @@ def _planned_steps(flags: Flags) -> list[str]:
 
 
 def _plan_payload(
-    plan: ProvisionPlan,
-    flags: Flags,
-    root_src: str,
-    safety_snapshot: Dict[str, Any],
+        plan: ProvisionPlan,
+        flags: Flags,
+        root_src: str,
+        safety_snapshot: Dict[str, Any],
 ) -> Dict[str, Any]:
     dm = probe(plan.device, dry_run=True)
     state: Dict[str, Any] = {"root_source": root_src}
@@ -656,11 +655,11 @@ def _require_passphrase(path: Optional[str], context: str = "default") -> str:
 
 
 def _run_postcheck_only(
-    plan: ProvisionPlan,
-    flags: Flags,
-    passphrase_file: str,
-    safety_snapshot: Dict[str, Any],
-    log_path: Optional[str],
+        plan: ProvisionPlan,
+        flags: Flags,
+        passphrase_file: str,
+        safety_snapshot: Dict[str, Any],
+        log_path: Optional[str],
 ) -> None:  # pragma: no cover - hardware flow
     dm = probe(plan.device)
     mounts = None

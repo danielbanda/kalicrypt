@@ -218,8 +218,8 @@ def mount_targets_safe(device: str, dry_run: bool = False) -> Mounts:
     - Mounts root (ext4), boot (ext4), esp (vfat). Raises on failure.
     """
     dm = probe(device, dry_run=dry_run)
-    mnt = "/mnt/nvme";
-    boot = f"{mnt}/boot";
+    mnt = "/mnt/nvme"
+    boot = f"{mnt}/boot"
     esp = f"{boot}/firmware"
     run(["mkdir", "-p", mnt, boot, esp], check=True)
     # Settle udev in case previous steps changed mappings

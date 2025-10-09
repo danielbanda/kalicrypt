@@ -66,10 +66,10 @@ class InitramfsVerificationError(RuntimeError):
 
 
 def verify_boot_surface(
-    boot_fw_dir: str,
-    luks_uuid: Optional[str] = None,
-    expected_initramfs: str = "initramfs_2712",
-    expected_root_mapper_suffix: str = "rp5vg-root",
+        boot_fw_dir: str,
+        luks_uuid: Optional[str] = None,
+        expected_initramfs: str = "initramfs_2712",
+        expected_root_mapper_suffix: str = "rp5vg-root",
 ) -> Dict[str, object]:
     """Validate firmware + initramfs surface shared between CLI and postcheck."""
 
