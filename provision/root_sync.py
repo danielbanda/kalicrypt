@@ -151,8 +151,6 @@ def rsync_root(dst_mnt: str, dry_run: bool = False, timeout_sec: int = 360, excl
             "--info=progress2",
             "--stats",
             "--itemize-changes",
-            "--filter=/etc/cryptsetup-keys.d/",
-            "--filter=/etc/initramfs-tools/conf.d/cryptsetup",
         ]
         for e in EXCLUDES:
             base += ["--exclude", e]
