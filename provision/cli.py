@@ -410,7 +410,7 @@ def _plan_payload(
             "skip": flags.skip_rsync,
             "exclude_boot": True,
         },
-        "initramfs": {"image": None}, "postcheck": {
+        "initramfs": {"image": "???"}, "postcheck": {
             "requested": flags.do_postcheck,
             **({"offer": "--do-postcheck"} if not flags.do_postcheck else {}),
         },
