@@ -1,0 +1,7 @@
+ruff==0.5.7
+black==24.8.0
+codespell==2.3.0
+mypy==1.11.2
+types-setuptools
+pytest
+pytest-cov

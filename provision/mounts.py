@@ -66,11 +66,13 @@ def _ensure_fs(dev: str, fstype: str, label: str = None):
         return
     if fstype == "vfat":
         args = ["mkfs.vfat", "-F", "32"]
-        if label: args += ["-n", label]
+        if label:
+            args += ["-n", label]
         run(args + [dev], check=True, timeout=60.0)
     elif fstype == "ext4":
         args = ["mkfs.ext4", "-F"]
-        if label: args += ["-L", label]
+        if label:
+            args += ["-L", label]
         # pre-clean stale signatures and let udev settle
         run(["wipefs", "-a", dev], check=True, timeout=60.0)
         run(["udevadm", "settle"], check=True, timeout=60.0)
@@ -83,7 +85,8 @@ def _ensure_fs(dev: str, fstype: str, label: str = None):
 def _mount(dev: str, dirpath: str, opts: list[str] = None):
     run(["mkdir", "-p", dirpath], check=False)
     cmd = ["mount"]
-    if opts: cmd += ["-o", ",".join(opts)]
+    if opts:
+        cmd += ["-o", ",".join(opts)]
     cmd += [dev, dirpath]
     run(cmd, check=True)
     udev_settle()
@@ -218,8 +221,8 @@ def mount_targets_safe(device: str, dry_run: bool = False) -> Mounts:
     - Mounts root (ext4), boot (ext4), esp (vfat). Raises on failure.
     """
     dm = probe(device, dry_run=dry_run)
-    mnt = "/mnt/nvme";
-    boot = f"{mnt}/boot";
+    mnt = "/mnt/nvme"
+    boot = f"{mnt}/boot"
     esp = f"{boot}/firmware"
     run(["mkdir", "-p", mnt, boot, esp], check=True)
     # Settle udev in case previous steps changed mappings
@@ -230,8 +233,10 @@ def mount_targets_safe(device: str, dry_run: bool = False) -> Mounts:
 
     def _try_mount(dev, target, fstype=None, opts=None):
         cmd = ["mount"]
-        if fstype: cmd += ["-t", fstype]
-        if opts: cmd += ["-o", ",".join(opts)]
+        if fstype:
+            cmd += ["-t", fstype]
+        if opts:
+            cmd += ["-o", ",".join(opts)]
         cmd += [dev, target]
         r = run(cmd, check=False)
         if r.rc != 0:

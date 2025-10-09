@@ -196,7 +196,6 @@ def _emit_version_stamp(meta: Dict[str, Any]) -> Dict[str, Any]:
     try:
         with open(path, "w", encoding="utf-8") as fh:
             json.dump(meta, fh, indent=2)
-        #print(f"version_stamp={path}")
         enriched = dict(meta)
         enriched["path"] = path
         return enriched
@@ -238,30 +237,15 @@ def _write_json_artifact(name: str, data: Dict[str, Any]) -> str:
 
 def _log_mounts() -> None:
     try:
-        result = run(["findmnt", "-R", "/mnt/nvme"], check=False)
-        # if getattr(result, "out", None):
-        #     print("[DIAG] findmnt -R /mnt/nvme:")
-        #     print(result.out)
+        run(["findmnt", "-R", "/mnt/nvme"], check=False)
     except Exception:
         pass
     try:
-        result = run(["lsblk", "-f"], check=False)
-        # if getattr(result, "out", None):
-        #     print("[DIAG] lsblk -f:")
-        #     print(result.out)
+        run(["lsblk", "-f"], check=False)
     except Exception:
         pass
     try:
-        result = run(["mount"], check=False)
-        # if getattr(result, "out", None):
-        #     lines = [
-        #         ln
-        #         for ln in result.out.splitlines()
-        #         if "/mnt/nvme" in ln or "/mapper" in ln
-        #     ]
-        #     if lines:
-        #         print("[DIAG] mount lines for /mnt/nvme and /mapper:")
-        #         print("\n".join(lines))
+        run(["mount"], check=False)
     except Exception:
         pass
 
@@ -308,10 +292,10 @@ def _planned_steps(flags: Flags) -> list[str]:
 
 
 def _plan_payload(
-    plan: ProvisionPlan,
-    flags: Flags,
-    root_src: str,
-    safety_snapshot: Dict[str, Any],
+        plan: ProvisionPlan,
+        flags: Flags,
+        root_src: str,
+        safety_snapshot: Dict[str, Any],
 ) -> Dict[str, Any]:
     dm = probe(plan.device, dry_run=True)
     state: Dict[str, Any] = {"root_source": root_src}
@@ -723,14 +707,13 @@ def _require_passphrase(path: Optional[str], context: str = "default") -> str:
 
 
 def _run_postcheck_only(
-    plan: ProvisionPlan,
-    flags: Flags,
-    passphrase_file: str,
-    safety_snapshot: Dict[str, Any],
-    log_path: Optional[str],
+        plan: ProvisionPlan,
+        flags: Flags,
+        passphrase_file: str,
+        safety_snapshot: Dict[str, Any],
+        log_path: Optional[str],
 ) -> None:  # pragma: no cover - hardware flow
     dm = probe(plan.device)
-    mounts = None
     open_luks(dm.p3, dm.luks_name, passphrase_file)
     activate_vg(dm.vg)
     mounts = mount_targets_safe(dm.device, dry_run=False)
@@ -917,7 +900,7 @@ def _main_impl(argv: Optional[list[str]] = None) -> int:  # pragma: no cover - e
     except Exception:
         pass
 
-    dm = probe(plan.device)
+    probe(plan.device)
 
     try:
         swapoff_all()
@@ -947,12 +930,10 @@ def _main_impl(argv: Optional[list[str]] = None) -> int:  # pragma: no cover - e
     bind_mounts(mounts.mnt)
 
     rsync_meta: Dict[str, Any] = {"exit": 0, "err": None, "out": None, "warning": False, "note": None}
-    pre_sync_snapshot: Dict[str, Any] = {}
     postcheck_report: Optional[Dict[str, Any]] = None
     cleanup_stats: Optional[Dict[str, Any]] = None
     heartbeat_meta: Optional[Dict[str, Any]] = None
     recovery_doc_meta: Optional[Dict[str, Any]] = None
-    root_mapper_path: Optional[str] = None
     packages_meta: Optional[Dict[str, Any]] = None
     rebuild_meta: Optional[Dict[str, Any]] = None
     boot_surface: Optional[Dict[str, Any]] = None

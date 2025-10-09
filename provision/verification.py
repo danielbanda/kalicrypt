@@ -66,10 +66,10 @@ class InitramfsVerificationError(RuntimeError):
 
 
 def verify_boot_surface(
-    boot_fw_dir: str,
-    luks_uuid: Optional[str] = None,
-    expected_initramfs: str = "initramfs_2712",
-    expected_root_mapper_suffix: str = "rp5vg-root",
+        boot_fw_dir: str,
+        luks_uuid: Optional[str] = None,
+        expected_initramfs: str = "initramfs_2712",
+        expected_root_mapper_suffix: str = "rp5vg-root",
 ) -> Dict[str, object]:
     """Validate firmware + initramfs surface shared between CLI and postcheck."""
 
@@ -177,7 +177,6 @@ def verify_boot_surface(
             why=None if mapper_token in cmdline_text else "cmdline missing root mapper token",
         )
 
-    lsinit_out = ""
     if initramfs_exists:
         proc = subprocess.run(
             ["lsinitramfs", initramfs_path],
@@ -345,7 +344,6 @@ def verify_triplet(
     cmd_path = os.path.join(mnt_root, esp_subdir, "cmdline.txt")
     crypttab_path = os.path.join(mnt_root, "etc", "crypttab")
     fstab_path = os.path.join(mnt_root, "etc", "fstab")
-    esp_dir = os.path.join(mnt_root, esp_subdir)
 
     for path in (cmd_path, crypttab_path, fstab_path):
         if not os.path.exists(path):

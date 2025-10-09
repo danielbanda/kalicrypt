@@ -110,7 +110,7 @@ def run(cmd: Sequence[str], check: bool = True, dry_run: bool = False, timeout: 
         env2 = (env or os.environ).copy()
         env2.setdefault('RP5_LOG_LEVEL', LOG_LEVEL)
         proc = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout, env=env2)
-    except subprocess.TimeoutExpired as e:
+    except subprocess.TimeoutExpired:
         try:
             subprocess.run(["udevadm", "settle"], check=False)
         except Exception:
