@@ -148,7 +148,7 @@ def write_crypttab(
             pass
 
 
-def write_initramfs_conf(mnt: str, keyfile_pattern: str = "/etc/cryptsetup-keys.d/*.key") -> None:
+def write_initramfs_conf(mnt: str, keyfile_pattern: str = "/etc/cryptsetup-keys.d/*.key") -> tuple[str, str, str]:
     conf_dir = os.path.join(mnt, "etc", "initramfs-tools", "conf.d")
     os.makedirs(conf_dir, exist_ok=True)
     path = os.path.join(conf_dir, "cryptsetup")
@@ -167,6 +167,8 @@ def write_initramfs_conf(mnt: str, keyfile_pattern: str = "/etc/cryptsetup-keys.
             os.fsync(fh.fileno())
         except Exception:
             raise
+
+    return path, current, desired
 
 
 def _resolve_root_mapper(root_mapper: str | None, vg: str | None, lv: str | None) -> str:
