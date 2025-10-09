@@ -7,19 +7,28 @@ import subprocess
 import time
 from typing import Sequence
 
-LOG_DIRS = [
-    "/home/admin/rp5/03_LOGS",
-    "/var/log/rp5",
-    "/tmp/rp5-logs",
-]
+from .paths import rp5_logs_dir
+
+
+LOG_DIRS: list[str] | None = None
 LOG_PATH = None
+
+
+def _log_dirs() -> list[str]:
+    if LOG_DIRS:
+        return list(LOG_DIRS)
+    return [
+        rp5_logs_dir(),
+        "/var/log/rp5",
+        "/tmp/rp5-logs",
+    ]
 
 
 def _ensure_logger():
     global LOG_PATH
     if LOG_PATH:
         return LOG_PATH
-    for d in LOG_DIRS:
+    for d in _log_dirs():
         d_expanded = os.path.expanduser(d)
         try:
             os.makedirs(d_expanded, exist_ok=True)

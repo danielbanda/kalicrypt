@@ -24,20 +24,26 @@ from .boot_plumbing import (
 from .devices import kill_holders, probe, swapoff_all, uuid_of
 from .executil import append_jsonl, resolve_log_path, run, trace, udev_settle
 from .firmware import assert_essentials, populate_esp
-from .initramfs import ensure_packages, rebuild, verify as verify_initramfs
+from .initramfs import ensure_packages, rebuild, verify as verify_initramfs, verify_keyfile_in_image
 from .luks_lvm import (
     activate_vg,
     close_luks,
+    ensure_keyfile,
     deactivate_vg,
     format_luks,
     make_vg_lv,
     open_luks,
+    remove_passphrase_keyslot,
 )
 from .model import Flags, ProvisionPlan
 from .mounts import mount_targets_safe, bind_mounts, mount_targets, unmount_all
 from .partitioning import apply_layout, verify_layout
-from .postboot import install_postboot_check as install_postboot_heartbeat
+from .postboot import (
+    install_postboot_check as install_postboot_heartbeat,
+    remove_postboot_artifacts,
+)
 from .postcheck import cleanup_pycache, run_postcheck
+from .paths import rp5_artifacts_dir, rp5_logs_dir
 from .recovery import write_recovery_doc
 from .root_sync import parse_rsync_stats, rsync_root
 from .verification import InitramfsVerificationError, require_boot_surface_ok
@@ -63,6 +69,8 @@ RESULT_CODES: Dict[str, int] = {
     "FAIL_UNHANDLED": 12,
     "FAIL_INVALID_DEVICE": 13,
     "POSTCHECK_OK": 14,
+    "FAIL_KEYFILE_PATH": 2,
+    "FAIL_KEYFILE_PERMS": 2,
 }
 
 RESULT_LOG_PATH: Optional[str] = None
@@ -75,7 +83,7 @@ def _result_log_path() -> str:
         return RESULT_LOG_PATH
     path = resolve_log_path()
     if not path:
-        base = os.path.expanduser("/home/admin/rp5/03_LOGS")
+        base = rp5_logs_dir()
         try:
             os.makedirs(base, exist_ok=True)
         except Exception:
@@ -110,15 +118,26 @@ def _safety_snapshot(device: str) -> Dict[str, Any]:
             return ""
 
     root_src = _capture(["findmnt", "-no", "SOURCE", "/"]) or ""
-    boot_src = _capture(["findmnt", "-no", "SOURCE", "/boot"]) or ""
-    target_pkname = _capture(["lsblk", "-no", "PKNAME", device]) or ""
+    boot_src = (
+        _capture(["findmnt", "-no", "SOURCE", "/boot/firmware"]) or _capture(["findmnt", "-no", "SOURCE", "/boot"]) or ""
+    )
+    target_pkname_raw = _capture(["lsblk", "-no", "PKNAME", device]) or ""
+    target_pkname = ""
+    if target_pkname_raw:
+        for line in target_pkname_raw.splitlines():
+            candidate = line.strip()
+            if candidate:
+                target_pkname = candidate
+                break
     if not target_pkname:
         target_pkname = os.path.basename(device).rstrip("0123456789")
+    same_disk = _same_underlying_disk(device, root_src)
     snapshot = {
         "root_src": root_src,
         "boot_src": boot_src,
         "target_device": device,
         "target_pkname": target_pkname,
+        "same_underlying_disk": same_disk,
     }
     return snapshot
 
@@ -138,7 +157,7 @@ def _emit_safety_check(snapshot: Dict[str, Any]) -> None:
 
 
 def _log_path(name: str) -> str:
-    base = os.path.expanduser("/home/admin/rp5/03_LOGS")
+    base = rp5_logs_dir()
     try:
         os.makedirs(base, exist_ok=True)
     except Exception:
@@ -171,7 +190,7 @@ def _version_metadata() -> Dict[str, Any]:
 
 
 def _emit_version_stamp(meta: Dict[str, Any]) -> Dict[str, Any]:
-    base = os.path.expanduser("/home/admin/rp5/03_LOGS")
+    base = rp5_logs_dir()
     os.makedirs(base, exist_ok=True)
     path = os.path.join(base, f"{meta['ts']}.ver")
     try:
@@ -256,10 +275,10 @@ def _planned_steps(flags: Flags) -> list[str]:
         steps.append("rsync_root(target, exclude_boot=True) [SKIPPED --skip-rsync]")
     else:
         steps.append("rsync_root(target, exclude_boot=True)")
-    steps.extend([
-        "write fstab/crypttab/cmdline + assert UUIDs",
-        "ensure_packages()/rebuild()/verify_initramfs()",
-    ])
+    steps.append("write fstab/crypttab/cmdline + assert UUIDs")
+    if flags.keyfile_auto:
+        steps.append("install_keyfile()/luksAddKey()")
+    steps.append("ensure_packages()/rebuild()/verify_initramfs()")
     if flags.do_postcheck:
         steps.extend(
             [
@@ -298,17 +317,20 @@ def _plan_payload(
     except Exception:
         pass
     state["same_underlying_disk"] = _same_underlying_disk(plan.device, root_src)
+    root_mapper = dm.root_lv_path or f"/dev/mapper/{dm.vg}-{dm.lv}"
+    device_map = dict(vars(dm))
+    device_map["root_lv_path"] = root_mapper
     plan_block = {
         "device": plan.device,
         "esp_mb": plan.esp_mb,
         "boot_mb": plan.boot_mb,
         "passphrase_file": plan.passphrase_file,
-        "device_map": vars(dm),
+        "device_map": device_map,
         "detected": {
             "vg": dm.vg,
             "lv": dm.lv,
-            "root_lv_path": dm.root_lv_path,
-            "root_mapper": dm.root_lv_path or f"/dev/mapper/{dm.vg}-{dm.lv}",
+            "root_lv_path": root_mapper,
+            "root_mapper": root_mapper,
         },
     }
     payload: Dict[str, Any] = {
@@ -330,6 +352,11 @@ def _plan_payload(
         "safety_check": safety_snapshot,
         "timestamp": int(time.time()),
     }
+    payload["key_unlock"] = (
+        {"mode": "keyfile", "path": flags.keyfile_path}
+        if flags.keyfile_auto
+        else {"mode": "prompt", "path": None}
+    )
     return payload
 
 
@@ -393,15 +420,11 @@ def _rsync_meta(res: Any) -> Dict[str, Any]:
     out_text = meta.get("out") or ""
     summary = _rsync_summarize(out_text)
     stats = parse_rsync_stats(out_text)
-    required_keys = ("files_transferred", "total_file_size", "throughput_line", "speedup")
     summary_stats = summary.setdefault("stats", {})
-    meta_stats = {}
-    for key in required_keys:
-        value = stats.get(key)
+    for key, value in stats.items():
         summary_stats.setdefault(key, value)
-        meta_stats[key] = value
     meta["summary"] = summary
-    meta["stats"] = meta_stats
+    meta["stats"] = stats
     return meta
 
 
@@ -567,6 +590,10 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--tpm-keyscript", action="store_true")
     parser.add_argument("--yes", dest="assume_yes", action="store_true")
     parser.add_argument("--skip-rsync", action="store_true")
+    parser.add_argument("--keyfile-auto", action="store_true")
+    parser.add_argument("--keyfile-path", default="/etc/cryptsetup-keys.d/cryptroot.key")
+    parser.add_argument("--keyfile-rotate", action="store_true")
+    parser.add_argument("--remove-passphrase", action="store_true")
     return parser
 
 
@@ -620,6 +647,46 @@ def _normalize_passphrase_path(path: Optional[str]) -> Optional[str]:
     return os.path.abspath(expanded)
 
 
+_KEYFILE_ROOT = "/etc/cryptsetup-keys.d"
+
+
+def _normalize_keyfile_path(path: Optional[str]) -> Optional[str]:
+    if path is None:
+        return None
+    normalized = os.path.normpath(path)
+    if not normalized.startswith("/"):
+        normalized = "/" + normalized.lstrip("/")
+    return normalized
+
+
+def _require_keyfile_path(path: str) -> str:
+    normalized = _normalize_keyfile_path(path)
+    if not normalized:
+        _emit_result(
+            "FAIL_KEYFILE_PATH",
+            extra={"hint": "keyfile path must be provided when --keyfile-auto is set"},
+        )
+    allowed_root = os.path.normpath(_KEYFILE_ROOT)
+    candidate = os.path.normpath(normalized)
+    if not candidate.startswith(allowed_root + os.sep) and candidate != allowed_root:
+        _emit_result(
+            "FAIL_KEYFILE_PATH",
+            extra={
+                "path": path,
+                "hint": "keyfile path must reside under /etc/cryptsetup-keys.d",
+            },
+        )
+    if candidate == allowed_root:
+        _emit_result(
+            "FAIL_KEYFILE_PATH",
+            extra={
+                "path": path,
+                "hint": "keyfile path must include a filename under /etc/cryptsetup-keys.d",
+            },
+        )
+    return candidate
+
+
 def _require_passphrase(path: Optional[str], context: str = "default") -> str:
     def _hint(reason: str) -> Dict[str, Any]:
         base = "--passphrase-file must reference a non-empty file"
@@ -670,7 +737,7 @@ def _run_postcheck_only(
                 extra={"why": exc.why, "checks": exc.result},
             )
 
-        rec_dir = os.path.expanduser("/home/admin/rp5/04_ARTIFACTS/recovery")
+        rec_dir = os.path.join(rp5_artifacts_dir(), "recovery")
         os.makedirs(rec_dir, exist_ok=True)
         rec = {
             "device": plan.device,
@@ -735,6 +802,10 @@ def _main_impl(argv: Optional[list[str]] = None) -> int:  # pragma: no cover - e
 
     log_path = _announce_log_path()
 
+    keyfile_path = _normalize_keyfile_path(args.keyfile_path) or "/etc/cryptsetup-keys.d/cryptroot.key"
+    if args.keyfile_auto or args.keyfile_rotate or args.remove_passphrase:
+        keyfile_path = _require_keyfile_path(keyfile_path)
+
     try:
         trace(
             "cli.args",
@@ -745,9 +816,19 @@ def _main_impl(argv: Optional[list[str]] = None) -> int:  # pragma: no cover - e
             tpm_keyscript=args.tpm_keyscript,
             assume_yes=args.assume_yes,
             skip_rsync=args.skip_rsync,
+            keyfile_auto=args.keyfile_auto,
+            keyfile_path=keyfile_path,
+            keyfile_rotate=args.keyfile_rotate,
+            remove_passphrase=args.remove_passphrase,
         )
     except Exception:
         pass
+
+    if args.remove_passphrase:
+        print(
+            "[WARN] --remove-passphrase will remove the interactive LUKS passphrase slot after keyfile verification.",
+            file=sys.stderr,
+        )
 
     flags = Flags(
         plan=args.plan,
@@ -756,6 +837,10 @@ def _main_impl(argv: Optional[list[str]] = None) -> int:  # pragma: no cover - e
         do_postcheck=args.do_postcheck,
         tpm_keyscript=args.tpm_keyscript,
         assume_yes=args.assume_yes,
+        keyfile_auto=args.keyfile_auto,
+        keyfile_path=keyfile_path,
+        keyfile_rotate=args.keyfile_rotate,
+        remove_passphrase=args.remove_passphrase,
     )
     normalized_passphrase = _normalize_passphrase_path(args.passphrase_file)
 
@@ -770,6 +855,10 @@ def _main_impl(argv: Optional[list[str]] = None) -> int:  # pragma: no cover - e
         _emit_result("FAIL_INVALID_DEVICE", extra={"device": plan.device})
 
     safety_snapshot = _safety_snapshot(plan.device)
+    same_disk = safety_snapshot.get("same_underlying_disk")
+    if same_disk is None:
+        same_disk = _same_underlying_disk(plan.device, safety_snapshot.get("root_src", ""))
+    same_disk = bool(same_disk)
     _emit_safety_check(safety_snapshot)
 
     ok, reason = safety.guard_not_live_disk(plan.device)
@@ -779,7 +868,7 @@ def _main_impl(argv: Optional[list[str]] = None) -> int:  # pragma: no cover - e
         _emit_result("FAIL_LIVE_DISK_GUARD", extra=extra)
 
     root_src = safety_snapshot.get("root_src", "")
-    if _same_underlying_disk(plan.device, root_src):
+    if same_disk:
         extra = dict(safety_snapshot)
         extra["reason"] = "target shares underlying disk with live root"
         if mode == "full":
@@ -847,6 +936,10 @@ def _main_impl(argv: Optional[list[str]] = None) -> int:  # pragma: no cover - e
     recovery_doc_meta: Optional[Dict[str, Any]] = None
     packages_meta: Optional[Dict[str, Any]] = None
     rebuild_meta: Optional[Dict[str, Any]] = None
+    boot_surface: Optional[Dict[str, Any]] = None
+    postcheck_pruned: Optional[Dict[str, Any]] = None
+    keyfile_meta: Optional[Dict[str, Any]] = None
+    initramfs_key_meta: Optional[Dict[str, Any]] = None
     try:
         try:
             populate_esp(mounts.esp, preserve_cmdline=True, preserve_config=True, dry_run=False)
@@ -878,7 +971,20 @@ def _main_impl(argv: Optional[list[str]] = None) -> int:  # pragma: no cover - e
             raise RuntimeError("could not determine LUKS UUID")
 
         write_fstab(mounts.mnt, p1_uuid, p2_uuid)
-        write_crypttab(mounts.mnt, luks_uuid, passphrase_file, keyscript_path=None)
+        try:
+            write_crypttab(
+                mounts.mnt,
+                luks_uuid,
+                passphrase_file,
+                keyscript_path=None,
+                keyfile_path=flags.keyfile_path if flags.keyfile_auto else None,
+                enable_keyfile=flags.keyfile_auto,
+            )
+        except ValueError as exc:
+            _emit_result(
+                "FAIL_KEYFILE_PATH",
+                extra={"path": flags.keyfile_path, "error": str(exc)},
+            )
         assert_crypttab_uuid(mounts.mnt, luks_uuid)
         root_mapper_path = dm.root_lv_path or f"/dev/mapper/{dm.vg}-{dm.lv}"
         write_cmdline(
@@ -890,6 +996,31 @@ def _main_impl(argv: Optional[list[str]] = None) -> int:  # pragma: no cover - e
         )
         assert_cmdline_uuid(mounts.esp, luks_uuid, root_mapper=root_mapper_path)
 
+        if flags.keyfile_auto:
+            try:
+                keyfile_meta = ensure_keyfile(
+                    mounts.mnt,
+                    flags.keyfile_path,
+                    dm.p3,
+                    passphrase_file,
+                    rotate=flags.keyfile_rotate,
+                )
+            except PermissionError as exc:
+                _emit_result(
+                    "FAIL_KEYFILE_PERMS",
+                    extra={"path": flags.keyfile_path, "error": str(exc)},
+                )
+            except ValueError as exc:
+                _emit_result(
+                    "FAIL_KEYFILE_PATH",
+                    extra={"path": flags.keyfile_path, "error": str(exc)},
+                )
+            except Exception as exc:  # noqa: BLE001
+                _emit_result(
+                    "FAIL_LUKS",
+                    extra={"phase": "luksAddKey", "error": str(exc)},
+                )
+
         try:
             packages_meta = ensure_packages(mounts.mnt)
         except Exception as exc:  # noqa: BLE001
@@ -898,12 +1029,28 @@ def _main_impl(argv: Optional[list[str]] = None) -> int:  # pragma: no cover - e
                 extra={"phase": "ensure_packages", "error": str(exc)},
             )
         try:
-            rebuild_meta = rebuild(mounts.mnt)
+            rebuild_meta = rebuild(mounts.mnt, force_prompt=not flags.keyfile_auto)
         except Exception as exc:  # noqa: BLE001
             _emit_result(
                 "FAIL_INITRAMFS_VERIFY",
                 extra={"phase": "rebuild", "error": str(exc)},
             )
+        if flags.keyfile_auto:
+            initramfs_key_meta = verify_keyfile_in_image(mounts.esp, flags.keyfile_path)
+            if (
+                initramfs_key_meta.get("rc") != 0
+                or not initramfs_key_meta.get("included")
+            ):
+                _emit_result(
+                    "FAIL_INITRAMFS_VERIFY",
+                    extra={
+                        "why": "keyfile not found in initramfs",
+                        "details": {
+                            "rc": initramfs_key_meta.get("rc"),
+                            "target": initramfs_key_meta.get("target"),
+                        },
+                    },
+                )
         write_config(mounts.esp)
         boot_surface = verify_initramfs(mounts.esp, luks_uuid=luks_uuid)
         try:
@@ -914,19 +1061,57 @@ def _main_impl(argv: Optional[list[str]] = None) -> int:  # pragma: no cover - e
                 extra={"why": exc.why, "checks": exc.result},
             )
 
+        if flags.remove_passphrase:
+            keyfile_ok = bool(
+                flags.keyfile_auto
+                and keyfile_meta
+                and initramfs_key_meta
+                and initramfs_key_meta.get("included")
+            )
+            if not keyfile_ok:
+                _emit_result(
+                    "FAIL_SAFETY_GUARD",
+                    extra={
+                        "why": "keyfile verification incomplete; refusing to remove passphrase",
+                    },
+                )
+            try:
+                remove_passphrase_keyslot(dm.p3, passphrase_file)
+            except Exception as exc:  # noqa: BLE001
+                _emit_result(
+                    "FAIL_SAFETY_GUARD",
+                    extra={
+                        "why": "failed to remove LUKS passphrase", "error": str(exc)
+                    },
+                )
+
+        postcheck_pruned = remove_postboot_artifacts(mounts.mnt)
+
         if flags.do_postcheck:
             try:
                 heartbeat_meta = install_postboot_heartbeat(mounts.mnt)
                 recovery_doc_meta = write_recovery_doc(mounts.mnt, luks_uuid)
                 cleanup_stats = cleanup_pycache(mounts.mnt)
-                postcheck_report = run_postcheck(mounts.mnt, luks_uuid, p1_uuid)
+            except Exception as exc:  # noqa: BLE001
+                print(f"[WARN] postcheck setup failed: {exc}", file=sys.stderr)
+            try:
+                postcheck_report = run_postcheck(
+                    mounts.mnt,
+                    luks_uuid,
+                    p1_uuid,
+                    keyfile_path=flags.keyfile_path if flags.keyfile_auto else None,
+                    initramfs_key_meta=initramfs_key_meta,
+                )
             except InitramfsVerificationError as exc:
                 _emit_result(
                     "FAIL_INITRAMFS_VERIFY",
                     extra={"why": exc.why, "checks": exc.result},
                 )
             except Exception as exc:  # noqa: BLE001
-                print(f"[WARN] postcheck setup failed: {exc}", file=sys.stderr)
+                _emit_result(
+                    "FAIL_POSTCHECK",
+                    extra={"error": str(exc)},
+                )
 
     except Exception as exc:  # noqa: BLE001
         print(f"[DIAG] Provisioning error: {exc}", file=sys.stderr)
@@ -962,7 +1147,7 @@ def _main_impl(argv: Optional[list[str]] = None) -> int:  # pragma: no cover - e
         "detected": {
             "vg": dm.vg,
             "lv": dm.lv,
-            "root_lv_path": dm.root_lv_path,
+            "root_lv_path": root_mapper_path,
             "root_mapper": root_mapper_path,
         },
         "pre_sync": pre_sync_snapshot,
@@ -981,6 +1166,9 @@ def _main_impl(argv: Optional[list[str]] = None) -> int:  # pragma: no cover - e
             "ensure_packages": packages_meta,
             "rebuild": rebuild_meta,
             "verification": boot_surface,
+            "keyfile_included": initramfs_key_meta.get("included") if initramfs_key_meta else None,
+            "keyfile_name": initramfs_key_meta.get("basename") if initramfs_key_meta else None,
+            "keyfile": initramfs_key_meta,
         },
         "postcheck": {
             "requested": flags.do_postcheck,
@@ -988,6 +1176,7 @@ def _main_impl(argv: Optional[list[str]] = None) -> int:  # pragma: no cover - e
             "recovery_doc": recovery_doc_meta,
             "report": postcheck_report,
             "cleanup": cleanup_stats,
+            "pruned": postcheck_pruned,
         },
         "timing": {
             "rsync": {
@@ -998,7 +1187,14 @@ def _main_impl(argv: Optional[list[str]] = None) -> int:  # pragma: no cover - e
             "initramfs": _timing_from_rebuild(rebuild_meta),
         },
         "steps": planned_steps,
+        "same_underlying_disk": same_disk,
     }
+    result_payload["keyfile"] = keyfile_meta
+    result_payload["key_unlock"] = (
+        {"mode": "keyfile", "path": flags.keyfile_path}
+        if flags.keyfile_auto
+        else {"mode": "prompt", "path": None}
+    )
     if not flags.do_postcheck:
         result_payload["postcheck"]["offer"] = "--do-postcheck"
     artifact_path = _write_json_artifact("full", result_payload)

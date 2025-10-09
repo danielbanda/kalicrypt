@@ -28,7 +28,7 @@ def test_preboot_check_main(monkeypatch, capsys):
         "/mnt/nvme/boot/firmware/cmdline.txt": "cryptdevice=UUID=abcd:cryptroot root=/dev/mapper/rp5vg-root",
         "/mnt/nvme/boot/firmware/config.txt": "initramfs initramfs_2712 followkernel",
         "/mnt/nvme/etc/fstab": "/dev/mapper/rp5vg-root",
-        "/mnt/nvme/etc/crypttab": "cryptroot UUID=abcd none",
+        "/mnt/nvme/etc/crypttab": "cryptroot UUID=abcd none  luks",
     }
     monkeypatch.setattr(preboot_check, "read", lambda path: mapping.get(path, ""))
 

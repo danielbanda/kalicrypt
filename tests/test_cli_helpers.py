@@ -4,22 +4,26 @@ from types import SimpleNamespace
 
 import pytest
 
-from provision import cli
+from provision import cli, executil, paths
 
 
-# def test_log_path_creates_directory(tmp_path, monkeypatch):
-#     base = tmp_path / "logs"
-#     monkeypatch.setattr(cli.os.path, "expanduser", lambda path: str(base) if path.startswith("~") else path)
-#     path = cli._log_path("sample")
-#     assert path.startswith(str(base))
-#     assert base.is_dir()
-#     assert os.path.basename(path).startswith("sample_")
+def test_log_path_creates_directory(tmp_path, monkeypatch):
+    monkeypatch.setenv("RP5_BASE_PATH", str(tmp_path))
+    monkeypatch.setattr(paths, "RP5_BASE_PATH", str(tmp_path))
+    path = cli._log_path("sample")
+    base_dir = tmp_path / "03_LOGS"
+    assert path.startswith(str(base_dir))
+    assert base_dir.is_dir()
+    assert os.path.basename(path).startswith("sample_")
 
 
 def test_emit_result_records_and_exits(tmp_path, monkeypatch, capsys):
+    monkeypatch.setenv("RP5_BASE_PATH", str(tmp_path))
+    monkeypatch.setattr(paths, "RP5_BASE_PATH", str(tmp_path))
+    monkeypatch.setattr(executil, "LOG_PATH", None)
+    monkeypatch.setattr(cli, "RESULT_LOG_PATH", None)
     records = []
     monkeypatch.setattr(cli, "append_jsonl", lambda path, payload: records.append((path, payload)))
-    monkeypatch.setattr(cli.os.path, "expanduser", lambda p: str(tmp_path / "log.jsonl"))
 
     with pytest.raises(SystemExit) as exc:
         cli._emit_result("PLAN_OK", extra={"foo": "bar"})
@@ -32,6 +36,8 @@ def test_emit_result_records_and_exits(tmp_path, monkeypatch, capsys):
 
 
 def test_write_json_artifact_writes_file(tmp_path, monkeypatch):
+    monkeypatch.setenv("RP5_BASE_PATH", str(tmp_path))
+    monkeypatch.setattr(paths, "RP5_BASE_PATH", str(tmp_path))
     target = tmp_path / "artifact.json"
     monkeypatch.setattr(cli, "_log_path", lambda name: str(target))
 
@@ -61,8 +67,11 @@ def test_log_mounts_tolerates_failures(monkeypatch):
 
 
 def test_record_result_returns_payload(tmp_path, monkeypatch):
+    monkeypatch.setenv("RP5_BASE_PATH", str(tmp_path))
+    monkeypatch.setattr(paths, "RP5_BASE_PATH", str(tmp_path))
+    monkeypatch.setattr(executil, "LOG_PATH", None)
+    monkeypatch.setattr(cli, "RESULT_LOG_PATH", None)
     monkeypatch.setattr(cli, "append_jsonl", lambda path, payload: None)
-    monkeypatch.setattr(cli.os.path, "expanduser", lambda p: str(tmp_path / "log.jsonl"))
 
     payload = cli._record_result("OK", {"x": 1})
     assert payload["result"] == "OK"
@@ -154,6 +163,7 @@ def test_rsync_helpers():
 
     meta = cli._rsync_meta(Dummy())
     assert meta["warning"] is True
+    assert meta["stats"].get("files_transferred") == 5
     summary = cli._rsync_summarize(meta["out"] or "Number of files transferred: 5\n")
     assert "counts" in summary
 

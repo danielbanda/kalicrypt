@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import os
 import re
+from typing import Any, Dict, Optional
 
+from .initramfs import verify_keyfile_in_image
 from .verification import require_boot_surface_ok, verify_boot_surface
 
 
@@ -55,7 +57,15 @@ def cleanup_pycache(mnt: str, subdir: str = "home/admin/rp5"):
     return {"removed_dirs": removed_dirs, "removed_files": removed_files}
 
 
-def run_postcheck(mnt: str, luks_uuid: str, p1_uuid: str | None = None, verbose: bool = False) -> dict:
+def run_postcheck(
+        mnt: str,
+        luks_uuid: str,
+        p1_uuid: str | None = None,
+        *,
+        keyfile_path: Optional[str] = None,
+        initramfs_key_meta: Optional[Dict[str, Any]] = None,
+        verbose: bool = False,
+) -> dict:
     res = {"checks": [], "ok": True, "installed": {}}
 
     recovery_host = os.path.join(mnt, "root", "RP5_RECOVERY.md")
@@ -91,8 +101,32 @@ def run_postcheck(mnt: str, luks_uuid: str, p1_uuid: str | None = None, verbose:
     _assert_eq("crypttab UUID", crypt_uuid, luks_uuid)
     res["checks"].append({"crypttab": True, "uuid": crypt_uuid})
 
-    # 2) boot firmware/initramfs verification
     boot_fw = os.path.join(mnt, "boot", "firmware")
+    keyfile_result: Dict[str, Any] | None = None
+    if keyfile_path:
+        keyfile_result = {
+            "path": keyfile_path,
+            "crypttab_has_key_path": keyfile_path in txt,
+        }
+        if not keyfile_result["crypttab_has_key_path"]:
+            res["checks"].append({"keyfile": keyfile_result})
+            raise RuntimeError(f"crypttab missing keyfile path {keyfile_path}")
+        meta = initramfs_key_meta or verify_keyfile_in_image(boot_fw, keyfile_path)
+        keyfile_result["initramfs_has_keyfile"] = bool(meta.get("included"))
+        keyfile_result["initramfs_meta"] = meta
+        res["checks"].append({"keyfile": keyfile_result})
+        if not keyfile_result["initramfs_has_keyfile"]:
+            why = meta.get("error") or "initramfs missing keyfile entry"
+            raise RuntimeError(why)
+    elif initramfs_key_meta:
+        keyfile_result = {
+            "crypttab_has_key_path": False,
+            "initramfs_has_keyfile": bool(initramfs_key_meta.get("included")),
+            "initramfs_meta": initramfs_key_meta,
+        }
+        res["checks"].append({"keyfile": keyfile_result})
+
+    # 2) boot firmware/initramfs verification
     boot_surface = verify_boot_surface(boot_fw, luks_uuid=luks_uuid)
     res["checks"].append({"boot_surface": boot_surface})
     require_boot_surface_ok(boot_surface)
@@ -105,6 +139,7 @@ def run_postcheck(mnt: str, luks_uuid: str, p1_uuid: str | None = None, verbose:
                 raise RuntimeError("fstab missing ESP UUID mapping")
         res["checks"].append({"fstab": True})
 
+    res["keyfile"] = keyfile_result
     res["ok"] = True
     return res
 

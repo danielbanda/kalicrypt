@@ -143,7 +143,7 @@ def test_verify_triplet_success(tmp_path):
     etc_dir.mkdir()
 
     (esp_dir / "cmdline.txt").write_text("cryptdevice=UUID=abc123:cryptroot root=/dev/mapper/rp5vg-root rootwait")
-    (etc_dir / "crypttab").write_text("cryptroot UUID=abc123 none\n")
+    (etc_dir / "crypttab").write_text("cryptroot UUID=abc123 none  luks\n")
     (etc_dir / "fstab").write_text("/dev/mapper/rp5vg-root / ext4 defaults 0 1\n")
     (esp_dir / "initramfs_2712").write_text("dummy")
 
@@ -193,7 +193,7 @@ def test_nvme_boot_verification(monkeypatch, tmp_path):
     mnt_root = "/mnt/nvme"
     mapping = {
         f"{mnt_root}/boot/firmware/cmdline.txt": "cryptdevice=UUID=abcd:cryptroot root=/dev/mapper/rp5vg-root rootfstype=ext4 rootwait",
-        f"{mnt_root}/etc/crypttab": "cryptroot UUID=abcd  none",
+        f"{mnt_root}/etc/crypttab": "cryptroot UUID=abcd  none  luks",
         f"{mnt_root}/etc/fstab": "/dev/mapper/rp5vg-root  /  ext4  defaults  0  1\n",
     }
     monkeypatch.setattr(verification, "_read", lambda path: mapping.get(path, ""))

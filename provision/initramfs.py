@@ -1,6 +1,7 @@
 """Ensure/rebuild/verify initramfs in target root (Phase 2)."""
 import os
 import re
+from pathlib import PurePosixPath
 from typing import Any, Dict
 
 from .executil import run
@@ -89,8 +90,9 @@ def _detect_kernel_version(mnt: str) -> str:
     return sorted(cands)[0]
 
 
-def rebuild(mnt: str, dry_run: bool = False) -> Dict[str, Any]:
-    _ensure_crypttab_prompts(mnt)
+def rebuild(mnt: str, dry_run: bool = False, *, force_prompt: bool = True) -> Dict[str, Any]:
+    if force_prompt:
+        _ensure_crypttab_prompts(mnt)
     kver = _detect_kernel_version(mnt)
 
     telemetry: Dict[str, Any] = {"kernel": kver, "attempts": [], "retries": 0}
@@ -135,6 +137,43 @@ def rebuild(mnt: str, dry_run: bool = False) -> Dict[str, Any]:
     telemetry["image"] = os.path.join(mnt, "boot", "firmware", "initramfs_2712")
 
     return telemetry
+
+
+def verify_keyfile_in_image(esp_dir: str, keyfile_path: str, image_name: str = "initramfs_2712") -> Dict[str, Any]:
+    """Check that ``keyfile_path`` is present inside the assembled initramfs image."""
+
+    key = PurePosixPath(keyfile_path)
+    if key.is_absolute():
+        try:
+            rel_key = key.relative_to("/")
+        except ValueError:
+            rel_key = key
+    else:
+        rel_key = key
+    relative_entry = rel_key.as_posix()
+    normalized_entry = relative_entry.lstrip("./")
+    if normalized_entry:
+        relative_entry = normalized_entry
+    basename = os.path.basename(relative_entry)
+    image = os.path.join(esp_dir, image_name)
+    target_entry = relative_entry or basename
+    res = run(["lsinitramfs", image], check=False, timeout=INITRAMFS_TIMEOUT)
+    listing = (res.out or "") if res.rc == 0 else ""
+    lines = [line.strip() for line in listing.splitlines() if line.strip()]
+    included = target_entry in lines or target_entry in listing
+    result: Dict[str, Any] = {
+        "image": image,
+        "basename": basename,
+        "target": target_entry,
+        "relative_path": target_entry,
+        "rc": res.rc,
+        "included": included,
+    }
+    if res.rc == 0:
+        result["lines"] = lines
+    else:
+        result["error"] = (res.err or res.out or "").strip()
+    return result
 
 
 def verify(dst_boot_fw: str, luks_uuid: str | None = None) -> Dict[str, Any]:
