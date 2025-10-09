@@ -1089,14 +1089,14 @@ def _main_impl(argv: Optional[list[str]] = None) -> int:  # pragma: no cover - e
                 extra={"path": flags.keyfile_path, "error": str(exc)},
             )
         assert_crypttab_uuid(mounts.mnt, luks_uuid)
-        if flags.keyfile_auto:
-            try:
-                write_initramfs_conf(mounts.mnt)
-            except Exception as exc:  # noqa: BLE001
-                _emit_result(
-                    "FAIL_INITRAMFS_VERIFY",
-                    extra={"phase": "initramfs_conf", "error": str(exc)},
-                )
+        # if flags.keyfile_auto:
+        #     try:
+        #         write_initramfs_conf(mounts.mnt)
+        #     except Exception as exc:  # noqa: BLE001
+        #         _emit_result(
+        #             "FAIL_INITRAMFS_VERIFY",
+        #             extra={"phase": "initramfs_conf", "error": str(exc)},
+        #         )
         root_mapper_path = dm.root_lv_path or f"/dev/mapper/{dm.vg}-{dm.lv}"
         write_cmdline(
             mounts.esp,
@@ -1226,6 +1226,18 @@ def _main_impl(argv: Optional[list[str]] = None) -> int:  # pragma: no cover - e
                     "snippet": exc.snippet,
                 },
             )
+
+        if flags.keyfile_auto:
+            try:
+                write_initramfs_conf(mounts.mnt)
+                write_initramfs_conf(initramfs_image_path)
+                append_jsonl(_result_log_path(), { "the_update" : {"mounts_mnt": mounts.mnt, "initramfs_image_path": initramfs_image_path} } )
+            except Exception as exc:  # noqa: BLE001
+                _emit_result(
+                    "WRITE_INITRAMFS_CONF_FAAAAAIIIIIIILLLLLL",
+                    extra={"phase": "initramfs_conf", "error": str(exc)},
+                )
+
         try:
             packages_meta = ensure_packages(mounts.mnt)
         except Exception as exc:  # noqa: BLE001
