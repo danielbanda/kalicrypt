@@ -1091,12 +1091,7 @@ def _main_impl(argv: Optional[list[str]] = None) -> int:  # pragma: no cover - e
         assert_crypttab_uuid(mounts.mnt, luks_uuid)
         if flags.keyfile_auto:
             try:
-                # write_initramfs_conf(mounts.mnt)
-                crypt_path, content = ensure_initramfs_conf(mounts.esp)
-                _emit_result(
-                    "cryptsetup-keys",
-                    extra={"path": crypt_path, "content": content},
-                )
+                write_initramfs_conf(mounts.mnt)
             except Exception as exc:  # noqa: BLE001
                 _emit_result(
                     "FAIL_INITRAMFS_VERIFY",
@@ -1112,113 +1107,113 @@ def _main_impl(argv: Optional[list[str]] = None) -> int:  # pragma: no cover - e
         )
         assert_cmdline_uuid(mounts.esp, luks_uuid, root_mapper=root_mapper_path)
 
-        # if flags.keyfile_auto:
-        #     key_slots_before: set[int] = set()
-        #     try:
-        #         key_slots_before = luks_active_slots(dm.p3)
-        #     except Exception:
-        #         key_slots_before = set()
-        #     old_key_backup = _backup_existing_keyfile(mounts.mnt, flags.keyfile_path) if flags.keyfile_rotate else None
-        #     try:
-        #         keyfile_meta = ensure_keyfile(
-        #             mounts.mnt,
-        #             flags.keyfile_path,
-        #             dm.p3,
-        #             passphrase_file,
-        #             rotate=flags.keyfile_rotate,
-        #         )
-        #     except PermissionError as exc:
-        #         if old_key_backup:
-        #             try:
-        #                 os.remove(old_key_backup)
-        #             except Exception:
-        #                 pass
-        #         _emit_result(
-        #             "FAIL_KEYFILE_PERMS",
-        #             extra={"path": flags.keyfile_path, "error": str(exc)},
-        #         )
-        #     except ValueError as exc:
-        #         if old_key_backup:
-        #             try:
-        #                 os.remove(old_key_backup)
-        #             except Exception:
-        #                 pass
-        #         _emit_result(
-        #             "FAIL_KEYFILE_PATH",
-        #             extra={"path": flags.keyfile_path, "error": str(exc)},
-        #         )
-        #     except Exception as exc:  # noqa: BLE001
-        #         if old_key_backup:
-        #             try:
-        #                 os.remove(old_key_backup)
-        #             except Exception:
-        #                 pass
-        #         _emit_result(
-        #             "FAIL_LUKS",
-        #             extra={"phase": "luksAddKey", "error": str(exc)},
-        #         )
-        # 
-        #     key_slots_after: set[int] = set()
-        #     try:
-        #         key_slots_after = luks_active_slots(dm.p3)
-        #     except Exception:
-        #         key_slots_after = set(key_slots_before)
-        # 
-        #     if keyfile_meta is not None:
-        #         keyfile_meta["slots_before"] = sorted(key_slots_before)
-        #         keyfile_meta["slots_after"] = sorted(key_slots_after)
-        #         added = sorted(key_slots_after - key_slots_before)
-        #         if added and not keyfile_meta.get("slot"):
-        #             keyfile_meta["slot"] = added[-1]
-        # 
-        #     keyfile_host_path = keyfile_meta.get("host_path") if isinstance(keyfile_meta, dict) else None
-        #     if keyfile_host_path:
-        #         try:
-        #             key_unlock_verified = test_keyfile_unlock(dm.p3, keyfile_host_path)
-        #         except Exception:
-        #             key_unlock_verified = False
-        #         if keyfile_meta is not None:
-        #             keyfile_meta["unlock_test_after"] = key_unlock_verified
-        # 
-        #     if flags.keyfile_rotate:
-        #         new_slot = keyfile_meta.get("slot") if isinstance(keyfile_meta, dict) else None
-        #         old_slot_index = None
-        #         if not key_unlock_verified:
-        #             if old_key_backup:
-        #                 try:
-        #                     os.remove(old_key_backup)
-        #                 except Exception:
-        #                     pass
-        #             _emit_result(
-        #                 "FAIL_LUKS",
-        #                 extra={"phase": "keyfile_rotate", "why": "new keyfile failed --test-passphrase"},
-        #             )
-        #         if old_key_backup:
-        #             try:
-        #                 before_remove = set(key_slots_after) if key_slots_after else luks_active_slots(dm.p3)
-        #                 remove_keyfile_slot(dm.p3, old_key_backup)
-        #                 after_remove = luks_active_slots(dm.p3)
-        #                 removed_slots = sorted(before_remove - after_remove)
-        #                 if removed_slots:
-        #                     old_slot_index = removed_slots[0]
-        #                 key_slots_after = after_remove
-        #             except Exception as exc:
-        #                 try:
-        #                     os.remove(old_key_backup)
-        #                 except Exception:
-        #                     pass
-        #                 _emit_result(
-        #                     "FAIL_LUKS",
-        #                     extra={"phase": "keyfile_rotate_remove", "error": str(exc)},
-        #                 )
-        #             else:
-        #                 try:
-        #                     os.remove(old_key_backup)
-        #                 except Exception:
-        #                     pass
-        #         if keyfile_meta is not None:
-        #             keyfile_meta["slots_after"] = sorted(key_slots_after)
-        #         key_rotation_meta = {"old_slot": old_slot_index, "new_slot": new_slot}
+        if flags.keyfile_auto:
+            key_slots_before: set[int] = set()
+            try:
+                key_slots_before = luks_active_slots(dm.p3)
+            except Exception:
+                key_slots_before = set()
+            old_key_backup = _backup_existing_keyfile(mounts.mnt, flags.keyfile_path) if flags.keyfile_rotate else None
+            try:
+                keyfile_meta = ensure_keyfile(
+                    mounts.mnt,
+                    flags.keyfile_path,
+                    dm.p3,
+                    passphrase_file,
+                    rotate=flags.keyfile_rotate,
+                )
+            except PermissionError as exc:
+                if old_key_backup:
+                    try:
+                        os.remove(old_key_backup)
+                    except Exception:
+                        pass
+                _emit_result(
+                    "FAIL_KEYFILE_PERMS",
+                    extra={"path": flags.keyfile_path, "error": str(exc)},
+                )
+            except ValueError as exc:
+                if old_key_backup:
+                    try:
+                        os.remove(old_key_backup)
+                    except Exception:
+                        pass
+                _emit_result(
+                    "FAIL_KEYFILE_PATH",
+                    extra={"path": flags.keyfile_path, "error": str(exc)},
+                )
+            except Exception as exc:  # noqa: BLE001
+                if old_key_backup:
+                    try:
+                        os.remove(old_key_backup)
+                    except Exception:
+                        pass
+                _emit_result(
+                    "FAIL_LUKS",
+                    extra={"phase": "luksAddKey", "error": str(exc)},
+                )
+
+            key_slots_after: set[int] = set()
+            try:
+                key_slots_after = luks_active_slots(dm.p3)
+            except Exception:
+                key_slots_after = set(key_slots_before)
+
+            if keyfile_meta is not None:
+                keyfile_meta["slots_before"] = sorted(key_slots_before)
+                keyfile_meta["slots_after"] = sorted(key_slots_after)
+                added = sorted(key_slots_after - key_slots_before)
+                if added and not keyfile_meta.get("slot"):
+                    keyfile_meta["slot"] = added[-1]
+
+            keyfile_host_path = keyfile_meta.get("host_path") if isinstance(keyfile_meta, dict) else None
+            if keyfile_host_path:
+                try:
+                    key_unlock_verified = test_keyfile_unlock(dm.p3, keyfile_host_path)
+                except Exception:
+                    key_unlock_verified = False
+                if keyfile_meta is not None:
+                    keyfile_meta["unlock_test_after"] = key_unlock_verified
+
+            if flags.keyfile_rotate:
+                new_slot = keyfile_meta.get("slot") if isinstance(keyfile_meta, dict) else None
+                old_slot_index = None
+                if not key_unlock_verified:
+                    if old_key_backup:
+                        try:
+                            os.remove(old_key_backup)
+                        except Exception:
+                            pass
+                    _emit_result(
+                        "FAIL_LUKS",
+                        extra={"phase": "keyfile_rotate", "why": "new keyfile failed --test-passphrase"},
+                    )
+                if old_key_backup:
+                    try:
+                        before_remove = set(key_slots_after) if key_slots_after else luks_active_slots(dm.p3)
+                        remove_keyfile_slot(dm.p3, old_key_backup)
+                        after_remove = luks_active_slots(dm.p3)
+                        removed_slots = sorted(before_remove - after_remove)
+                        if removed_slots:
+                            old_slot_index = removed_slots[0]
+                        key_slots_after = after_remove
+                    except Exception as exc:
+                        try:
+                            os.remove(old_key_backup)
+                        except Exception:
+                            pass
+                        _emit_result(
+                            "FAIL_LUKS",
+                            extra={"phase": "keyfile_rotate_remove", "error": str(exc)},
+                        )
+                    else:
+                        try:
+                            os.remove(old_key_backup)
+                        except Exception:
+                            pass
+                if keyfile_meta is not None:
+                    keyfile_meta["slots_after"] = sorted(key_slots_after)
+                key_rotation_meta = {"old_slot": old_slot_index, "new_slot": new_slot}
 
         try:
             initramfs_image_path = resolve_initramfs_image(mounts.esp)

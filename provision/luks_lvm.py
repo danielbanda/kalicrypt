@@ -82,12 +82,12 @@ def _ensure_dir_secure(path: str) -> None:
 
 def _ensure_file_secure(path: str) -> None:
     try:
-        os.chmod(path, 0o400)
+        os.chmod(path, 0o600)
     except Exception:
         pass
     st = os.stat(path)
-    if stat.S_IMODE(st.st_mode) != 0o400:
-        raise PermissionError(f"keyfile {path} must have mode 0400")
+    if stat.S_IMODE(st.st_mode) != 0o600:
+        raise PermissionError(f"keyfile {path} must have mode 0600")
     if st.st_uid != 0 or st.st_gid != 0:
         try:
             os.chown(path, 0, 0)
