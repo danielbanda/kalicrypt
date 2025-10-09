@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import os
+import shutil
 from pathlib import Path
+from typing import Any, Dict, List
 
 from .executil import run, udev_settle
 
@@ -68,3 +70,39 @@ def install_postboot_check(mnt_root: str) -> dict:
 
     udev_settle()
     return {"script": str(script), "unit": str(unit)}
+
+
+def remove_postboot_artifacts(mnt_root: str) -> Dict[str, Any]:
+    if not mnt_root or mnt_root == "/":
+        return {"artifacts": [], "skipped": True}
+
+    mnt = Path(mnt_root)
+    targets: List[Path] = [
+        Path("usr/local/sbin/rp5-postboot-check"),
+        Path("etc/systemd/system/rp5-postboot.service"),
+        Path("etc/systemd/system/multi-user.target.wants/rp5-postboot.service"),
+        Path("root/RP5_RECOVERY.md"),
+    ]
+    details: List[Dict[str, Any]] = []
+    for rel in targets:
+        path = mnt / rel
+        path_str = str(path)
+        existed = os.path.lexists(path_str)
+        entry: Dict[str, Any] = {"path": path_str, "existed": existed, "removed": False}
+        if not existed:
+            details.append(entry)
+            continue
+        try:
+            if path.is_dir() and not path.is_symlink():
+                shutil.rmtree(path_str, ignore_errors=False)
+            else:
+                path.unlink()
+            entry["removed"] = True
+        except FileNotFoundError:
+            entry["removed"] = False
+        except Exception as exc:  # noqa: BLE001
+            entry["error"] = str(exc)
+        details.append(entry)
+    summary: Dict[str, Any] = {"artifacts": details}
+    summary["any_removed"] = any(item.get("removed") for item in details)
+    return summary
