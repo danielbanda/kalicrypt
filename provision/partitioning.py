@@ -9,10 +9,14 @@ def _base_device(dev: str) -> str:
     return re.sub(r'p\d+$', '', dev)
 
 
-def guard_not_live_root(target: str):
+def guard_not_live_root(target: str, *, raise_on_conflict: bool = True) -> tuple[bool, str]:
     root_src = run(["findmnt", "-no", "SOURCE", "/"], check=False).out.strip()
     if root_src and _base_device(root_src) == _base_device(target):
-        raise SystemExit(f"FATAL: target {target} shares base device with live root {root_src}")
+        reason = f"target {target} shares base device with live root {root_src}"
+        if raise_on_conflict:
+            raise SystemExit(reason)
+        return False, reason
+    return True, ""
 
 
 def precleanup(device: str, dry_run: bool = False):
@@ -68,7 +72,14 @@ def _have_three_parts(device: str, dry_run: bool = False) -> bool:
 
 
 def apply_layout(device: str, esp_mb: int, boot_mb: int, dry_run: bool = False):
-    guard_not_live_root(device)
+    try:
+        result = guard_not_live_root(device, raise_on_conflict=False)
+    except TypeError:
+        result = guard_not_live_root(device)
+    if isinstance(result, tuple):
+        ok, reason = result
+        if not ok:
+            raise SystemExit(reason)
     precleanup(device, dry_run=dry_run)
     for p in (device + "p1", device + "p2", device + "p3"):
         run(["wipefs", "-a", p], check=False, dry_run=dry_run)

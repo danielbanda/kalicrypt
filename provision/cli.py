@@ -23,7 +23,7 @@ from .boot_plumbing import (
     write_fstab,
 )
 from .devices import kill_holders, probe, swapoff_all, uuid_of
-from .executil import append_jsonl, resolve_log_path, run, trace, udev_settle
+from .executil import append_jsonl, run, trace, udev_settle
 from .firmware import assert_essentials, populate_esp
 from .initramfs import ensure_packages, rebuild, verify as verify_initramfs, verify_keyfile_in_image
 from .luks_lvm import (
@@ -40,8 +40,14 @@ from .luks_lvm import (
     test_keyfile_unlock,
 )
 from .model import Flags, ProvisionPlan
-from .mounts import mount_targets_safe, bind_mounts, mount_targets, unmount_all
-from .partitioning import apply_layout, verify_layout
+from .mounts import (
+    mount_targets_safe,
+    bind_mounts,
+    mount_targets,
+    unmount_all,
+    _assert_lsblk_clean,
+)
+from .partitioning import apply_layout, guard_not_live_root, verify_layout
 from .paths import rp5_artifacts_dir, rp5_logs_dir
 from .postboot import (
     install_postboot_check as install_postboot_heartbeat,
@@ -60,6 +66,7 @@ RESULT_CODES: Dict[str, int] = {
     "FAIL_SAFETY_GUARD": 2,
     "FAIL_LIVE_DISK_GUARD": 2,
     "FAIL_MISSING_PASSPHRASE": 2,
+    "FAIL_LOG_PATH": 2,
     "FAIL_FIRMWARE_CHECK": 3,
     "FAIL_PARTITIONING": 4,
     "FAIL_LUKS": 5,
@@ -70,6 +77,7 @@ RESULT_CODES: Dict[str, int] = {
     "FAIL_GENERIC": 9,
     "FAIL_RSYNC_SKIPPED_FULLRUN": 10,
     "FAIL_INITRAMFS_VERIFY": 11,
+    "FAIL_KEYFILE_VERIFY": 11,
     "FAIL_UNHANDLED": 12,
     "FAIL_INVALID_DEVICE": 13,
     "POSTCHECK_OK": 14,
@@ -83,22 +91,49 @@ _LOG_ANNOUNCED = False
 CLI_START_MONO = time.perf_counter()
 _CURRENT_DEVICE: Optional[str] = None
 _SHA_CACHE: Dict[str, Optional[str]] = {}
+LATEST_SAFETY_SNAPSHOT: Dict[str, Any] = {}
+LATEST_HOLDERS: str = ""
+JSON_OUTPUT_ENABLED = True
+_LOG_VER_PATH: Optional[str] = None
+
+
+def _log_bootstrap_failure(path: str, error: Exception) -> None:
+    global RESULT_LOG_PATH
+    RESULT_LOG_PATH = os.path.join(rp5_logs_dir(), "ete_nvme.jsonl")
+    _emit_result(
+        "FAIL_LOG_PATH",
+        extra={"path": path, "reason": str(error)},
+    )
+
+
+def _ensure_log_base() -> str:
+    global RESULT_LOG_PATH, _LOG_VER_PATH
+    base = rp5_logs_dir()
+    try:
+        os.makedirs(base, exist_ok=True)
+    except Exception as exc:  # noqa: BLE001
+        _log_bootstrap_failure(base, exc)
+    RESULT_LOG_PATH = os.path.join(base, "ete_nvme.jsonl")
+    sha = _git_rev_parse("HEAD") or "unknown"
+    ts = datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+    ver_path = os.path.join(base, "ete_nvme.ver")
+    try:
+        with open(ver_path, "w", encoding="utf-8") as fh:
+            fh.write(f"{sha} {ts}\n")
+    except Exception as exc:  # noqa: BLE001
+        _log_bootstrap_failure(ver_path, exc)
+    else:
+        _LOG_VER_PATH = ver_path
+    return base
 
 
 def _result_log_path() -> str:
     global RESULT_LOG_PATH
     if RESULT_LOG_PATH:
         return RESULT_LOG_PATH
-    path = resolve_log_path()
-    if not path:
-        base = rp5_logs_dir()
-        try:
-            os.makedirs(base, exist_ok=True)
-        except Exception:
-            pass
-        path = os.path.join(base, "ete_nvme.jsonl")
-    RESULT_LOG_PATH = path
-    return path
+    base = _ensure_log_base()
+    RESULT_LOG_PATH = os.path.join(base, "ete_nvme.jsonl")
+    return RESULT_LOG_PATH
 
 
 def _announce_log_path() -> str:
@@ -164,6 +199,8 @@ def _safety_snapshot(device: str) -> Dict[str, Any]:
 
 
 def _emit_safety_check(snapshot: Dict[str, Any]) -> None:
+    global LATEST_SAFETY_SNAPSHOT
+    LATEST_SAFETY_SNAPSHOT = dict(snapshot)
     payload = {"ts": int(time.time()), "event": "SAFETY_CHECK", **snapshot}
     append_jsonl(_result_log_path(), payload)
     try:
@@ -255,6 +292,20 @@ def _emit_result(
     payload: Dict[str, Any] = {"result": kind, "ts": int(time.time())}
     if extra:
         payload.update(extra)
+    if LATEST_SAFETY_SNAPSHOT:
+        payload.setdefault("safety_snapshot", LATEST_SAFETY_SNAPSHOT)
+    else:
+        payload.setdefault("safety_snapshot", {})
+    if "holders" not in payload:
+        payload["holders"] = LATEST_HOLDERS
+    if "reason" not in payload:
+        for field in ("why", "error", "hint"):
+            val = payload.get(field)
+            if val:
+                payload["reason"] = str(val)
+                break
+        else:
+            payload["reason"] = kind
     log_path = payload.get("log_path") or _result_log_path()
     if log_path:
         payload.setdefault("log_path", log_path)
@@ -264,7 +315,8 @@ def _emit_result(
         version_meta = _emit_version_stamp(dict(meta))
         payload["version"] = version_meta
     append_jsonl(_result_log_path(), payload)
-    print(json.dumps(payload, sort_keys=True, separators=(",", ":")))
+    if JSON_OUTPUT_ENABLED:
+        print(json.dumps(payload, sort_keys=True, separators=(",", ":")))
     sha_cli = (version_meta.get("sha_cli") or "")[:7] if isinstance(version_meta, dict) else ""
     sha_main = (version_meta.get("sha_main") or "")[:7] if isinstance(version_meta, dict) else ""
     why_text = str(payload.get("why") or payload.get("reason") or "")
@@ -275,6 +327,10 @@ def _emit_result(
         f"result={kind} why={why_text} device={device} timing_total_ms={total_ms} "
         f"log_path={final_log_path} sha_cli={sha_cli} sha_main={sha_main}"
     )
+    try:
+        print(final_line, file=sys.stderr)
+    except Exception:
+        pass
     code = RESULT_CODES.get(kind, 1) if exit_code is None else exit_code
     raise SystemExit(code)
 
@@ -650,6 +706,10 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--keyfile-path", default="/etc/cryptsetup-keys.d/cryptroot.key")
     parser.add_argument("--keyfile-rotate", action="store_true")
     parser.add_argument("--remove-passphrase", action="store_true")
+    parser.add_argument("--json", dest="json", action="store_true", default=True,
+                        help="emit machine-readable JSON to stdout (default)")
+    parser.add_argument("--no-json", dest="json", action="store_false",
+                        help="disable JSON output (stdout suppressed)")
     return parser
 
 
@@ -667,6 +727,7 @@ def _same_underlying_disk(target_dev: str, root_src: str) -> bool:
 
 
 def _holders_snapshot(device: str) -> str:
+    global LATEST_HOLDERS
     try:
         lsblk = subprocess.run(
             ["lsblk", "-o", "NAME,TYPE,MOUNTPOINT", "-n", device],
@@ -689,8 +750,11 @@ def _holders_snapshot(device: str) -> str:
             out.append(lsblk.stdout.strip())
         if sysfs.stdout:
             out.append(sysfs.stdout.strip())
-        return "\n".join(x for x in out if x)
+        snapshot = "\n".join(x for x in out if x)
+        LATEST_HOLDERS = snapshot
+        return snapshot
     except Exception:
+        LATEST_HOLDERS = ""
         return ""
 
 
@@ -875,10 +939,18 @@ def _main_impl(argv: Optional[list[str]] = None) -> int:  # pragma: no cover - e
     mode = "plan" if args.plan else ("dry" if args.dry_run else "full")
     sync_performed = not args.skip_rsync
 
+    global _CURRENT_DEVICE, JSON_OUTPUT_ENABLED, LATEST_HOLDERS
+    JSON_OUTPUT_ENABLED = bool(args.json)
+    if not JSON_OUTPUT_ENABLED:
+        print("[WARN] JSON output is enforced; ignoring --no-json", file=sys.stderr)
+        JSON_OUTPUT_ENABLED = True
+        args.json = True
+
+    _ensure_log_base()
     log_path = _announce_log_path()
 
-    global _CURRENT_DEVICE
     _CURRENT_DEVICE = args.device
+    LATEST_HOLDERS = ""
 
     keyfile_auto_flag = bool(args.keyfile_auto or args.keyfile_rotate or args.remove_passphrase)
 
@@ -921,6 +993,7 @@ def _main_impl(argv: Optional[list[str]] = None) -> int:  # pragma: no cover - e
         keyfile_path=keyfile_path,
         keyfile_rotate=args.keyfile_rotate,
         remove_passphrase=args.remove_passphrase,
+        json_output=args.json,
     )
     normalized_passphrase = _normalize_passphrase_path(args.passphrase_file)
 
@@ -933,6 +1006,8 @@ def _main_impl(argv: Optional[list[str]] = None) -> int:  # pragma: no cover - e
 
     if not os.path.exists(plan.device):
         _emit_result("FAIL_INVALID_DEVICE", extra={"device": plan.device})
+
+    LATEST_HOLDERS = _holders_snapshot(plan.device)
 
     safety_snapshot = _safety_snapshot(plan.device)
     same_disk = safety_snapshot.get("same_underlying_disk")
@@ -953,6 +1028,19 @@ def _main_impl(argv: Optional[list[str]] = None) -> int:  # pragma: no cover - e
         extra["reason"] = "target shares underlying disk with live root"
         if mode == "full":
             extra["holders"] = _holders_snapshot(plan.device)
+        _emit_result("FAIL_LIVE_DISK_GUARD", extra=extra)
+
+    guard_result = guard_not_live_root(plan.device, raise_on_conflict=False)
+    if isinstance(guard_result, tuple):
+        ok_root, root_reason = guard_result
+    else:
+        ok_root, root_reason = True, ""
+    if not ok_root:
+        holders = _holders_snapshot(plan.device)
+        extra = dict(safety_snapshot)
+        extra["reason"] = root_reason or "target matches live root"
+        if holders:
+            extra["holders"] = holders
         _emit_result("FAIL_LIVE_DISK_GUARD", extra=extra)
 
     if mode == "full" and args.skip_rsync:
@@ -1022,6 +1110,7 @@ def _main_impl(argv: Optional[list[str]] = None) -> int:  # pragma: no cover - e
     key_rotation_meta: Optional[Dict[str, Any]] = None
     key_unlock_verified = False
     initramfs_key_meta: Optional[Dict[str, Any]] = None
+    cleanup_errors: list[Dict[str, Any]] = []
     try:
         try:
             populate_esp(mounts.esp, preserve_cmdline=True, preserve_config=True, dry_run=False)
@@ -1202,18 +1291,24 @@ def _main_impl(argv: Optional[list[str]] = None) -> int:  # pragma: no cover - e
             )
         if flags.keyfile_auto:
             initramfs_key_meta = verify_keyfile_in_image(mounts.esp, flags.keyfile_path)
-            if (
-                    initramfs_key_meta.get("rc") != 0
-                    or not initramfs_key_meta.get("included")
-            ):
+            included = bool(initramfs_key_meta.get("included"))
+            rc = initramfs_key_meta.get("rc")
+            if rc not in (0, None) or not included:
+                details = {
+                    "rc": rc,
+                    "target": initramfs_key_meta.get("target"),
+                }
+                reason = "keyfile verification failed"
+                if not included:
+                    reason = "keyfile not embedded in initramfs"
                 _emit_result(
-                    "FAIL_INITRAMFS_VERIFY",
+                    "FAIL_KEYFILE_VERIFY",
                     extra={
-                        "why": "keyfile not found in initramfs",
-                        "details": {
-                            "rc": initramfs_key_meta.get("rc"),
-                            "target": initramfs_key_meta.get("target"),
-                        },
+                        "reason": reason,
+                        "details": details,
+                        "included": included,
+                        "basename": initramfs_key_meta.get("basename"),
+                        "unlock_test": key_unlock_verified,
                     },
                 )
         write_config(mounts.esp)
@@ -1291,11 +1386,25 @@ def _main_impl(argv: Optional[list[str]] = None) -> int:  # pragma: no cover - e
             _log_mounts()
         except Exception:
             pass
+        raise
+    finally:
         try:
-            unmount_all(mounts.mnt)
+            _log_mounts()
         except Exception:
             pass
-        raise
+        try:
+            unmount_all(mounts.mnt)
+        except Exception as exc_cleanup:  # noqa: BLE001
+            cleanup_errors.append({"phase": "unmount_all", "error": str(exc_cleanup)})
+        try:
+            _assert_lsblk_clean(mounts.mnt)
+        except Exception as exc_cleanup:  # noqa: BLE001
+            cleanup_errors.append({"phase": "lsblk_assert", "error": str(exc_cleanup)})
+        try:
+            close_luks(dm.luks_name)
+            deactivate_vg(dm.vg)
+        except Exception:
+            pass
 
     planned_steps = _planned_steps(flags)
 
@@ -1367,6 +1476,8 @@ def _main_impl(argv: Optional[list[str]] = None) -> int:  # pragma: no cover - e
     }
     result_payload["device"] = plan.device
     result_payload["keyfile"] = keyfile_meta
+    if cleanup_errors:
+        result_payload["cleanup_errors"] = cleanup_errors
     if key_rotation_meta:
         result_payload["key_rotation"] = key_rotation_meta
     if flags.keyfile_auto:
@@ -1386,22 +1497,6 @@ def _main_impl(argv: Optional[list[str]] = None) -> int:  # pragma: no cover - e
     preboot_payload = dict(result_payload)
     preboot_payload["phase"] = "preboot"
     _record_result("ETE_PREBOOT_OK", preboot_payload)
-
-    try:
-        unmount_all(mounts.mnt)
-    except Exception:
-        pass
-
-    try:
-        close_luks(dm.luks_name)
-        deactivate_vg(dm.vg)
-    except Exception:
-        pass
-
-    try:
-        _log_mounts()
-    except Exception:
-        pass
 
     final_payload = dict(result_payload)
     final_payload["phase"] = "completed"
