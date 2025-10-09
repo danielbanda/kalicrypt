@@ -1,6 +1,7 @@
 """Ensure/rebuild/verify initramfs in target root (Phase 2)."""
 import os
 import re
+from pathlib import PurePosixPath
 from typing import Any, Dict
 
 from .executil import run
@@ -141,9 +142,21 @@ def rebuild(mnt: str, dry_run: bool = False, *, force_prompt: bool = True) -> Di
 def verify_keyfile_in_image(esp_dir: str, keyfile_path: str, image_name: str = "initramfs_2712") -> Dict[str, Any]:
     """Check that ``keyfile_path`` is present inside the assembled initramfs image."""
 
-    basename = os.path.basename(keyfile_path)
+    key = PurePosixPath(keyfile_path)
+    if key.is_absolute():
+        try:
+            rel_key = key.relative_to("/")
+        except ValueError:
+            rel_key = key
+    else:
+        rel_key = key
+    relative_entry = rel_key.as_posix()
+    normalized_entry = relative_entry.lstrip("./")
+    if normalized_entry:
+        relative_entry = normalized_entry
+    basename = os.path.basename(relative_entry)
     image = os.path.join(esp_dir, image_name)
-    target_entry = f"etc/cryptsetup-keys.d/{basename}"
+    target_entry = relative_entry or basename
     res = run(["lsinitramfs", image], check=False, timeout=INITRAMFS_TIMEOUT)
     listing = (res.out or "") if res.rc == 0 else ""
     lines = [line.strip() for line in listing.splitlines() if line.strip()]
@@ -152,6 +165,7 @@ def verify_keyfile_in_image(esp_dir: str, keyfile_path: str, image_name: str = "
         "image": image,
         "basename": basename,
         "target": target_entry,
+        "relative_path": target_entry,
         "rc": res.rc,
         "included": included,
     }
