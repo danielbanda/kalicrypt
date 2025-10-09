@@ -1,4 +1,5 @@
 import ast
+import os
 import sys
 import threading
 from collections import defaultdict
@@ -13,6 +14,7 @@ _CANDIDATE_LINES: Dict[Path, Set[int]] = {}
 _PREVIOUS_TRACE = None
 _PREVIOUS_THREAD_TRACE = None
 _TRACE_ACTIVE = False
+_USE_PYTEST_COV = os.getenv("KALICRYPT_USE_PYTEST_COV", "").lower() in {"1", "true", "yes"}
 
 
 def _iter_python_files(directory: Path) -> Iterable[Path]:
@@ -69,6 +71,8 @@ def _trace(frame, event, arg):
 
 def pytest_sessionstart(session):
     global _PREVIOUS_TRACE, _PREVIOUS_THREAD_TRACE, _TRACE_ACTIVE
+    if _USE_PYTEST_COV:
+        return
     if _TRACE_ACTIVE:
         return
     _TRACE_ACTIVE = True
