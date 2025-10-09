@@ -69,7 +69,8 @@ jobs:
           path: |
             coverage.xml
             .pytest_cache
-            .coverage
+            .coverage*
     env:
       COVERAGE_PROCESS_START: .coveragerc
       PYTHONPATH: tests  # so _sitecustomize is importable
+      KALICRYPT_USE_PYTEST_COV: "true"
