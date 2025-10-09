@@ -17,6 +17,7 @@ from . import safety
 from .boot_plumbing import (
     assert_cmdline_uuid,
     assert_crypttab_uuid,
+    ensure_initramfs_conf,
     write_cmdline,
     write_config,
     write_crypttab,
@@ -1105,6 +1106,7 @@ def _main_impl(argv: Optional[list[str]] = None) -> int:  # pragma: no cover - e
             lv=dm.lv,
         )
         assert_cmdline_uuid(mounts.esp, luks_uuid, root_mapper=root_mapper_path)
+        ensure_initramfs_conf(mounts.esp)
 
         # if flags.keyfile_auto:
         #     key_slots_before: set[int] = set()
