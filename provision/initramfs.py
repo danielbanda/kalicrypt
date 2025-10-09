@@ -179,15 +179,15 @@ def rebuild(target: str, dry_run: bool = False, *, force_prompt: bool = True) ->
     }
 
     # create → update
-    argv_create = ["chroot", mnt, "/usr/sbin/update-initramfs", "-c", "-k", kver]
+    argv_create = ["chroot", mnt, "/usr/sbin/update-initramfs", "-c", "-k", kver, "$(ls /mnt/nvme/boot | sed -n 's/^initrd\.img-\(.*\)$/\1/p')"]
     res = run(argv_create, check=False, dry_run=dry_run, timeout=INITRAMFS_TIMEOUT)
     telemetry["attempts"].append({"mode": "create", "argv": argv_create, **_tails(res)})
 
-    if res.rc != 0:
-        telemetry["retries"] += 1
-        argv_update = ["chroot", mnt, "/usr/sbin/update-initramfs", "-u", "-k", kver]
-        res = run(argv_update, check=True, dry_run=dry_run, timeout=INITRAMFS_TIMEOUT)
-        telemetry["attempts"].append({"mode": "update", "argv": argv_update, **_tails(res)})
+    # if res.rc != 0:
+    #     telemetry["retries"] += 1
+    #     argv_update = ["chroot", mnt, "/usr/sbin/update-initramfs", "-u", "-k", kver]
+    #     res = run(argv_update, check=True, dry_run=dry_run, timeout=INITRAMFS_TIMEOUT)
+    #     telemetry["attempts"].append({"mode": "update", "argv": argv_update, **_tails(res)})
 
     # copy → list
     argv_cp = ["chroot", mnt, "/bin/cp", "-f", f"/boot/initrd.img-{kver}", f"/boot/firmware/{image_name}"]

@@ -293,15 +293,17 @@ def assert_crypttab_uuid(mnt: str, luks_uuid: str):
         raise RuntimeError('crypttab UUID mismatch')
 
 
-def ensure_initramfs_conf(mnt):
+def ensure_cryptsetup_initramfs(mnt):
     try:
-        conf_dir = os.path.join(mnt, 'etc', 'initramfs-tools', 'conf.d')
+        conf_dir = os.path.join(mnt, 'etc', 'cryptsetup-initramfs')
         os.makedirs(conf_dir, exist_ok=True)
-        conf_path = os.path.join(conf_dir, 'cryptsetup')
+        conf_path = os.path.join(conf_dir, 'conf-hook')
         content = 'KEYFILE_PATTERN=/etc/cryptsetup-keys.d/*.key\nUMASK=0077\n'
         with open(conf_path, 'w', encoding='utf-8') as f:
             f.write(content)
 
+        os.chmod(conf_dir, mode=755)
+        os.chmod(conf_path, mode=644)
         return conf_path, content
     except Exception:
         raise
