@@ -69,19 +69,19 @@ def rsync_root(dst_mnt: str, dry_run: bool = False, timeout_sec: int = 360, excl
         cmd = base + ["/", dst]
         try:
             result = run(cmd, check=True, dry_run=dry_run, timeout=timeout_sec)
-            setattr(result, "retries", retries)
+            result.retries = retries
             return result
         except subprocess.CalledProcessError as e:
             if e.returncode in (23, 24):
                 print(
                     f"[WARN] rsync completed with return code {e.returncode} (partial transfer/vanished files). Continuing.")
-                setattr(e, "duration", time.perf_counter() - start_time)
-                setattr(e, "retries", retries)
+                e.duration = time.perf_counter() - start_time
+                e.retries = retries
                 return e
             raise
     # Fallback: cp -a (no delete, best effort)
     result = run(["cp", "-a", "/.", dst_mnt], check=True, dry_run=dry_run, timeout=timeout_sec)
-    setattr(result, "retries", retries)
+    result.retries = retries
     if exclude_boot:
         for rel in ("boot", "boot/firmware"):
             run(["rm", "-rf", f"{dst_mnt.rstrip('/')}/{rel}"], check=False, dry_run=dry_run)
