@@ -24,6 +24,12 @@ To simplify iteration right now, we **do not** enforce:
 2. Require 1–2 approvals and “Dismiss stale approvals on new commits”.
 3. Enable “Require linear history” (and optionally “Require branches to be up to date”).
 
+## CI caching
+
+This repo uses `ci/requirements-dev.txt` as the cache key for pip caches in CI.
+- If you add or update dev tools, update that file so caching stays effective.
+- If you later add a top-level `pyproject.toml`/`requirements.txt`, you can remove `cache-dependency-path` from workflows.
+
 ## Security
 
 - CodeQL scanning is enabled.

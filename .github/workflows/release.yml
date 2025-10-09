@@ -19,9 +19,13 @@ jobs:
         with:
           python-version: "3.12"
           cache: "pip"
+          cache-dependency-path: "ci/requirements-dev.txt"
 
       - run: python -m pip install --upgrade pip
-      - run: pip install build
+      - run: |
+          if [ -f ci/requirements-dev.txt ]; then
+            pip install -r ci/requirements-dev.txt
+          fi
 
       - name: Build (sdist+wheel) if project is packageable
         run: |
