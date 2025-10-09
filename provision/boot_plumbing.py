@@ -97,7 +97,7 @@ def write_crypttab(
             continue
         preserved.append(line)
 
-    def _merge_options(initial: list[str], required: list[str]) -> str:
+    def _merge_options(initial: list[str], required: list[str]) -> list[str]:
         merged: list[str] = []
         seen: set[str] = set()
         for opt in initial:
@@ -111,12 +111,15 @@ def write_crypttab(
             if opt not in seen:
                 merged.append(opt)
                 seen.add(opt)
-        return ','.join(merged)
+        return merged
 
     required_opts = ['luks']
     if enable_keyfile:
         required_opts.append('discard')
-    options_field = _merge_options(existing_options, required_opts)
+    merged_options = _merge_options(existing_options, required_opts)
+    if enable_keyfile:
+        merged_options = [opt for opt in merged_options if opt != 'initramfs'] + ['initramfs']
+    options_field = ','.join(merged_options)
     desired_line = f"cryptroot UUID={luks_uuid}  {desired_key}  {options_field}".rstrip()
 
     if preserved and preserved[-1].strip():
@@ -141,6 +144,26 @@ def write_crypttab(
         try:
             f.flush()
             os.fsync(f.fileno())
+        except Exception:
+            pass
+
+
+def write_initramfs_conf(mnt: str, keyfile_pattern: str = "/etc/cryptsetup-keys.d/*.key") -> None:
+    conf_dir = os.path.join(mnt, "etc", "initramfs-tools", "conf.d")
+    os.makedirs(conf_dir, exist_ok=True)
+    path = os.path.join(conf_dir, "cryptsetup")
+    desired = f"KEYFILE_PATTERN={keyfile_pattern}\nUMASK=0077\n"
+    try:
+        current = open(path, "r", encoding="utf-8").read()
+    except FileNotFoundError:
+        current = None
+    if current == desired:
+        return
+    with open(path, "w", encoding="utf-8") as fh:
+        fh.write(desired)
+        try:
+            fh.flush()
+            os.fsync(fh.fileno())
         except Exception:
             pass
 
