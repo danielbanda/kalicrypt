@@ -409,19 +409,18 @@ def _plan_payload(
             "skip": flags.skip_rsync,
             "exclude_boot": True,
         },
-        "initramfs": {"image": None},
-        "postcheck": {
+        "initramfs": {"image": None}, "postcheck": {
             "requested": flags.do_postcheck,
             **({"offer": "--do-postcheck"} if not flags.do_postcheck else {}),
         },
         "safety_check": safety_snapshot,
         "timestamp": int(time.time()),
-    }
-    payload["key_unlock"] = (
-        {"mode": "keyfile", "path": flags.keyfile_path}
-        if flags.keyfile_auto
-        else {"mode": "prompt", "path": None}
-    )
+        "key_unlock":
+            (
+                {"mode": "keyfile", "path": flags.keyfile_path}
+                if flags.keyfile_auto
+                else {"mode": "prompt", "path": None}
+            )}
     return payload
 
 
@@ -1215,32 +1214,32 @@ def _main_impl(argv: Optional[list[str]] = None) -> int:  # pragma: no cover - e
         #             keyfile_meta["slots_after"] = sorted(key_slots_after)
         #         key_rotation_meta = {"old_slot": old_slot_index, "new_slot": new_slot}
 
-        # try:
-        #     initramfs_image_path = resolve_initramfs_image(mounts.esp)
-        # except InitramfsResolutionError as exc:
-        #     _emit_result(
-        #         "FAIL_INITRAMFS_PATH",
-        #         extra={
-        #             "boot_fw": mounts.esp,
-        #             "config_path": exc.config_path,
-        #             "snippet": exc.snippet,
-        #         },
-        #     )
-        # try:
-        #     packages_meta = ensure_packages(mounts.mnt)
-        # except Exception as exc:  # noqa: BLE001
-        #     _emit_result(
-        #         "FAIL_INITRAMFS_VERIFY",
-        #         extra={"phase": "ensure_packages", "error": str(exc)},
-        #     )
-        # try:
-        #     rebuild_target = initramfs_image_path or mounts.mnt
-        #     rebuild_meta = rebuild(rebuild_target, force_prompt=not flags.keyfile_auto)
-        # except Exception as exc:  # noqa: BLE001
-        #     _emit_result(
-        #         "FAIL_INITRAMFS_VERIFY",
-        #         extra={"phase": "rebuild", "error": str(exc)},
-        #     )
+        try:
+            initramfs_image_path = resolve_initramfs_image(mounts.esp)
+        except InitramfsResolutionError as exc:
+            _emit_result(
+                "FAIL_INITRAMFS_PATH",
+                extra={
+                    "boot_fw": mounts.esp,
+                    "config_path": exc.config_path,
+                    "snippet": exc.snippet,
+                },
+            )
+        try:
+            packages_meta = ensure_packages(mounts.mnt)
+        except Exception as exc:  # noqa: BLE001
+            _emit_result(
+                "FAIL_INITRAMFS_VERIFY",
+                extra={"phase": "ensure_packages", "error": str(exc)},
+            )
+        try:
+            rebuild_target = initramfs_image_path or mounts.mnt
+            rebuild_meta = rebuild(rebuild_target, force_prompt=not flags.keyfile_auto)
+        except Exception as exc:  # noqa: BLE001
+            _emit_result(
+                "FAIL_INITRAMFS_VERIFY",
+                extra={"phase": "rebuild", "error": str(exc)},
+            )
         # if flags.keyfile_auto:
         #     expected_key_entry = "etc/cryptsetup-keys.d/cryptroot.key"
         #     verify_target = initramfs_image_path or mounts.esp
