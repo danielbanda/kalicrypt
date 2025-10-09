@@ -94,7 +94,6 @@ _SHA_CACHE: Dict[str, Optional[str]] = {}
 LATEST_SAFETY_SNAPSHOT: Dict[str, Any] = {}
 LATEST_HOLDERS: str = ""
 JSON_OUTPUT_ENABLED = True
-_LOG_VER_PATH: Optional[str] = None
 
 
 def _log_bootstrap_failure(path: str, error: Exception) -> None:
@@ -107,7 +106,7 @@ def _log_bootstrap_failure(path: str, error: Exception) -> None:
 
 
 def _ensure_log_base() -> str:
-    global RESULT_LOG_PATH, _LOG_VER_PATH
+    global RESULT_LOG_PATH
     base = rp5_logs_dir()
     try:
         os.makedirs(base, exist_ok=True)
@@ -122,8 +121,7 @@ def _ensure_log_base() -> str:
             fh.write(f"{sha} {ts}\n")
     except Exception as exc:  # noqa: BLE001
         _log_bootstrap_failure(ver_path, exc)
-    else:
-        _LOG_VER_PATH = ver_path
+    # Removed else assignment to unused _LOG_VER_PATH
     return base
 
 
