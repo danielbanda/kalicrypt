@@ -154,9 +154,14 @@ def verify_keyfile_in_image(esp_dir: str, keyfile_path: str, image_name: str = "
     normalized_entry = relative_entry.lstrip("./")
     if normalized_entry:
         relative_entry = normalized_entry
-    basename = os.path.basename(relative_entry)
+    try:
+        secure_relative = rel_key.relative_to("etc/cryptsetup-keys.d")
+        relative_entry = PurePosixPath("etc/cryptsetup-keys.d") / secure_relative
+    except ValueError:
+        relative_entry = PurePosixPath(relative_entry)
+    basename = relative_entry.name
     image = os.path.join(esp_dir, image_name)
-    target_entry = relative_entry or basename
+    target_entry = relative_entry.as_posix() or basename
     res = run(["lsinitramfs", image], check=False, timeout=INITRAMFS_TIMEOUT)
     listing = (res.out or "") if res.rc == 0 else ""
     lines = [line.strip() for line in listing.splitlines() if line.strip()]
