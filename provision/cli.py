@@ -239,11 +239,6 @@ def _emit_version_stamp(meta: Dict[str, Any]) -> Dict[str, Any]:
             json.dump(meta, fh, indent=2)
         enriched = dict(meta)
         enriched["path"] = path
-        try:
-            print(f"version_stamp={path}")
-            sys.stdout.flush()
-        except Exception:
-            pass
         return enriched
     except Exception:
         print("version_stamp=<unavailable>", file=sys.stderr)
