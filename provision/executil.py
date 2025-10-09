@@ -1,4 +1,7 @@
+from __future__ import annotations
+
 """Lightweight subprocess wrapper and dry-run hook (skeleton)."""
+
 import datetime as _dt
 import json
 import os
@@ -11,7 +14,7 @@ from .paths import rp5_logs_dir
 
 
 LOG_DIRS: list[str] | None = None
-LOG_PATH = None
+LOG_PATH: str | None = None
 
 
 def _log_dirs() -> list[str]:
@@ -24,7 +27,7 @@ def _log_dirs() -> list[str]:
     ]
 
 
-def _ensure_logger():
+def _ensure_logger() -> str | None:
     global LOG_PATH
     if LOG_PATH:
         return LOG_PATH
@@ -95,7 +98,13 @@ def trace(event: str, **fields):
 
 # --- end TRACE block ---
 
-def run(cmd: Sequence[str], check: bool = True, dry_run: bool = False, timeout: float = 60.0, env: dict | None = None) -> Result:
+def run(
+    cmd: Sequence[str],
+    check: bool = True,
+    dry_run: bool = False,
+    timeout: float = 60.0,
+    env: dict | None = None,
+) -> Result:
     # TRACE: log command start
     try:
         trace('exec.start', cmd=list(cmd))

@@ -1,8 +1,11 @@
+from __future__ import annotations
+
 import os
 import re
 import shutil
 import subprocess
 import time
+from typing import Dict
 
 from .executil import run
 
@@ -75,7 +78,7 @@ def _parse_float(fragment: str):
 def parse_rsync_stats(text: str) -> dict:
     if not isinstance(text, str):
         return {}
-    stats: dict[str, object] = {}
+    stats: Dict[str, object] = {}
     for raw_line in text.splitlines():
         line = raw_line.strip()
         if not line:
@@ -86,61 +89,44 @@ def parse_rsync_stats(text: str) -> dict:
             if value is not None and "files_transferred" not in stats:
                 stats["files_transferred"] = value
         elif lower.startswith("total file size:"):
-            human, numeric = _parse_size_field(line.split(":", 1)[1])
-            stats["total_file_size"] = human
+            _, numeric = _parse_size_field(line.split(":", 1)[1])
             if numeric is not None:
                 stats["total_file_size_bytes"] = numeric
         elif lower.startswith("total transferred file size:"):
-            human, numeric = _parse_size_field(line.split(":", 1)[1])
-            stats["transferred_size"] = human
+            _, numeric = _parse_size_field(line.split(":", 1)[1])
             if numeric is not None:
                 stats["transferred_size_bytes"] = numeric
-        elif lower.startswith("literal data:"):
-            human, numeric = _parse_size_field(line.split(":", 1)[1])
-            stats["literal_data"] = human
-            if numeric is not None:
-                stats["literal_data_bytes"] = numeric
-        elif lower.startswith("matched data:"):
-            human, numeric = _parse_size_field(line.split(":", 1)[1])
-            stats["matched_data"] = human
-            if numeric is not None:
-                stats["matched_data_bytes"] = numeric
         elif lower.startswith("file list size:"):
-            human, numeric = _parse_size_field(line.split(":", 1)[1])
-            stats["file_list_size"] = human
+            _, numeric = _parse_size_field(line.split(":", 1)[1])
             if numeric is not None:
                 stats["file_list_size_bytes"] = numeric
         elif lower.startswith("total bytes sent:"):
-            human, numeric = _parse_size_field(line.split(":", 1)[1])
-            stats["bytes_sent"] = human
+            _, numeric = _parse_size_field(line.split(":", 1)[1])
             if numeric is not None:
                 stats["bytes_sent_bytes"] = numeric
         elif lower.startswith("total bytes received:"):
-            human, numeric = _parse_size_field(line.split(":", 1)[1])
-            stats["bytes_received"] = human
+            _, numeric = _parse_size_field(line.split(":", 1)[1])
             if numeric is not None:
                 stats["bytes_received_bytes"] = numeric
         elif lower.startswith("sent ") and " bytes  received " in lower and " bytes/sec" in lower:
-            stats["throughput"] = line
-            sent_match = re.search(r"sent\s+([0-9][0-9,\.]*\s*[A-Za-z]+)", line, re.IGNORECASE)
-            if sent_match:
-                human, numeric = _parse_size_field(sent_match.group(1))
-                stats.setdefault("bytes_sent", human)
-                if numeric is not None and "bytes_sent_bytes" not in stats:
-                    stats["bytes_sent_bytes"] = numeric
-            recv_match = re.search(r"received\s+([0-9][0-9,\.]*\s*[A-Za-z]+)", line, re.IGNORECASE)
-            if recv_match:
-                human, numeric = _parse_size_field(recv_match.group(1))
-                stats.setdefault("bytes_received", human)
-                if numeric is not None and "bytes_received_bytes" not in stats:
-                    stats["bytes_received_bytes"] = numeric
             rate_match = re.search(r"([0-9][0-9,\.]*)\s*bytes/sec", line, re.IGNORECASE)
             if rate_match:
                 rate = _parse_float(rate_match.group(1))
                 if rate is not None:
                     stats["throughput_bytes_per_sec"] = rate
+            if "bytes_sent_bytes" not in stats:
+                sent_match = re.search(r"sent\s+([0-9][0-9,\.]*\s*[A-Za-z]+)", line, re.IGNORECASE)
+                if sent_match:
+                    _, numeric = _parse_size_field(sent_match.group(1))
+                    if numeric is not None:
+                        stats["bytes_sent_bytes"] = numeric
+            if "bytes_received_bytes" not in stats:
+                recv_match = re.search(r"received\s+([0-9][0-9,\.]*\s*[A-Za-z]+)", line, re.IGNORECASE)
+                if recv_match:
+                    _, numeric = _parse_size_field(recv_match.group(1))
+                    if numeric is not None:
+                        stats["bytes_received_bytes"] = numeric
         elif lower.startswith("speedup is "):
-            stats["speedup_text"] = line
             value_segment = lower.split("speedup is", 1)[1]
             value = _parse_float(value_segment)
             if value is not None:

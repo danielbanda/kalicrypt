@@ -59,33 +59,85 @@ def write_crypttab(
 ):
     ct = os.path.join(mnt, 'etc/crypttab')
     os.makedirs(os.path.dirname(ct), exist_ok=True)
-    existing = ""
+    existing_lines: list[str] = []
     if os.path.isfile(ct):
         try:
             with open(ct, 'r', encoding='utf-8') as fh:
-                existing = fh.read()
+                existing_lines = fh.read().splitlines()
         except Exception:
-            existing = ""
+            existing_lines = []
 
-    desired_key: str
+    normalized_key: str | None = None
     if enable_keyfile:
         normalized_key = _validate_keyfile_path(keyfile_path)
         if not normalized_key:
             raise ValueError("keyfile path required when enable_keyfile=True")
+
+    if normalized_key:
         desired_key = normalized_key
     elif passfile:
         desired_key = passfile
     else:
         desired_key = 'none'
+
     if keyscript_path:
         desired_key = f"{desired_key} keyscript={keyscript_path}"
 
-    desired_line = f"cryptroot UUID={luks_uuid}  {desired_key}  luks\n"
-    if existing.strip() == desired_line.strip():
+    existing_options: list[str] = []
+    preserved: list[str] = []
+    for line in existing_lines:
+        stripped = line.strip()
+        if not stripped or stripped.startswith('#'):
+            preserved.append(line)
+            continue
+        parts = stripped.split()
+        if parts and parts[0] == 'cryptroot':
+            if len(parts) > 3:
+                existing_options = parts[3].split(',')
+            continue
+        preserved.append(line)
+
+    def _merge_options(initial: list[str], required: list[str]) -> str:
+        merged: list[str] = []
+        seen: set[str] = set()
+        for opt in initial:
+            candidate = opt.strip()
+            if not candidate:
+                continue
+            if candidate not in seen:
+                merged.append(candidate)
+                seen.add(candidate)
+        for opt in required:
+            if opt not in seen:
+                merged.append(opt)
+                seen.add(opt)
+        return ','.join(merged)
+
+    required_opts = ['luks']
+    if enable_keyfile:
+        required_opts.append('discard')
+    options_field = _merge_options(existing_options, required_opts)
+    desired_line = f"cryptroot UUID={luks_uuid}  {desired_key}  {options_field}".rstrip()
+
+    if preserved and preserved[-1].strip():
+        preserved.append(desired_line)
+    else:
+        preserved.append(desired_line)
+
+    new_text = '\n'.join(preserved).rstrip() + '\n'
+
+    current = ''
+    try:
+        with open(ct, 'r', encoding='utf-8') as fh:
+            current = fh.read()
+    except FileNotFoundError:
+        current = ''
+
+    if current == new_text:
         return
 
     with open(ct, 'w', encoding='utf-8') as f:
-        f.write(desired_line)
+        f.write(new_text)
         try:
             f.flush()
             os.fsync(f.fileno())
