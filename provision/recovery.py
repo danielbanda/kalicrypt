@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 # Recovery helpers (Phase 6)
 import json
 import os

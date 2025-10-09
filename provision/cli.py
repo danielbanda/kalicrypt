@@ -9,6 +9,7 @@ import shlex
 import subprocess
 import sys
 import time
+import tempfile
 from datetime import datetime, timezone
 from typing import Any, Dict, Optional
 
@@ -28,12 +29,15 @@ from .initramfs import ensure_packages, rebuild, verify as verify_initramfs, ver
 from .luks_lvm import (
     activate_vg,
     close_luks,
-    ensure_keyfile,
     deactivate_vg,
+    ensure_keyfile,
     format_luks,
+    luks_active_slots,
     make_vg_lv,
     open_luks,
+    remove_keyfile_slot,
     remove_passphrase_keyslot,
+    test_keyfile_unlock,
 )
 from .model import Flags, ProvisionPlan
 from .mounts import mount_targets_safe, bind_mounts, mount_targets, unmount_all
@@ -71,10 +75,14 @@ RESULT_CODES: Dict[str, int] = {
     "POSTCHECK_OK": 14,
     "FAIL_KEYFILE_PATH": 2,
     "FAIL_KEYFILE_PERMS": 2,
+    "FAIL_REMOVE_PASSPHRASE_BLOCKED": 2,
 }
 
 RESULT_LOG_PATH: Optional[str] = None
 _LOG_ANNOUNCED = False
+CLI_START_MONO = time.perf_counter()
+_CURRENT_DEVICE: Optional[str] = None
+_SHA_CACHE: Dict[str, Optional[str]] = {}
 
 
 def _result_log_path() -> str:
@@ -102,10 +110,11 @@ def _announce_log_path() -> str:
                 trace("cli.log_path", path=path)
             except Exception:
                 pass
-        try:
-            sys.stdout.flush()
-        except Exception:
-            pass
+            try:
+                print(f"log_path={path}")
+                sys.stdout.flush()
+            except Exception:
+                pass
         _LOG_ANNOUNCED = True
     return path
 
@@ -121,22 +130,39 @@ def _safety_snapshot(device: str) -> Dict[str, Any]:
     boot_src = (
         _capture(["findmnt", "-no", "SOURCE", "/boot/firmware"]) or _capture(["findmnt", "-no", "SOURCE", "/boot"]) or ""
     )
-    target_pkname_raw = _capture(["lsblk", "-no", "PKNAME", device]) or ""
     target_pkname = ""
-    if target_pkname_raw:
-        for line in target_pkname_raw.splitlines():
-            candidate = line.strip()
-            if candidate:
-                target_pkname = candidate
-                break
+    raw_pk = _capture(["lsblk", "-no", "PKNAME", device])
+    if raw_pk:
+        target_pkname = raw_pk.splitlines()[0].strip()
     if not target_pkname:
-        target_pkname = os.path.basename(device).rstrip("0123456789")
+        target_pkname = os.path.basename(device.rstrip("/"))
+
+    disk_pkname = target_pkname
+    part_pkname = ""
+    part_device = ""
+    try:
+        dm = probe(device, dry_run=True)
+        part_device = dm.p3 or ""
+    except Exception:
+        part_device = ""
+
+    if part_device:
+        part_pk = _capture(["lsblk", "-no", "NAME", part_device]) or ""
+        part_pkname = part_pk.splitlines()[0].strip() if part_pk else os.path.basename(part_device.rstrip("/"))
+        disk_from_part = _capture(["lsblk", "-no", "PKNAME", part_device]) or ""
+        if disk_from_part.strip():
+            disk_pkname = disk_from_part.strip()
+    if not disk_pkname:
+        disk_pkname = os.path.basename(device.rstrip("/"))
+
     same_disk = _same_underlying_disk(device, root_src)
     snapshot = {
         "root_src": root_src,
         "boot_src": boot_src,
         "target_device": device,
         "target_pkname": target_pkname,
+        "disk_pkname": disk_pkname,
+        "part_pkname": part_pkname,
         "same_underlying_disk": same_disk,
     }
     return snapshot
@@ -149,11 +175,11 @@ def _emit_safety_check(snapshot: Dict[str, Any]) -> None:
         trace("cli.safety_check", **snapshot)
     except Exception:
         pass
-    # try:
-    #     print(f"safety_check={json.dumps(snapshot, sort_keys=True)}")
-    #     sys.stdout.flush()
-    # except Exception:
-    #     pass
+    try:
+        print(f"safety_check={json.dumps(snapshot, sort_keys=True)}")
+        sys.stdout.flush()
+    except Exception:
+        pass
 
 
 def _log_path(name: str) -> str:
@@ -167,6 +193,8 @@ def _log_path(name: str) -> str:
 
 
 def _git_rev_parse(ref: str) -> str | None:
+    if ref in _SHA_CACHE:
+        return _SHA_CACHE[ref]
     try:
         proc = subprocess.run(
             ["git", "rev-parse", ref],
@@ -174,30 +202,58 @@ def _git_rev_parse(ref: str) -> str | None:
             text=True,
             check=True,
         )
-        return proc.stdout.strip()
+        value = proc.stdout.strip()
+    except Exception:
+        value = None
+    _SHA_CACHE[ref] = value
+    return value
+
+
+def _git_current_branch() -> str | None:
+    try:
+        proc = subprocess.run(
+            ["git", "rev-parse", "--abbrev-ref", "HEAD"],
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        branch = proc.stdout.strip()
+        return branch or None
     except Exception:
         return None
 
 
 def _version_metadata() -> Dict[str, Any]:
     ts = datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+    branch = _git_current_branch() or "in-mem"
     return {
         "sha_main": _git_rev_parse("HEAD"),
         "sha_cli": _git_rev_parse("HEAD:provision/cli.py"),
-        "ts": ts,
-        "branch": "in-mem",
+        "ts_utc": ts,
+        "branch": branch,
+        "log_path": _result_log_path(),
     }
 
 
 def _emit_version_stamp(meta: Dict[str, Any]) -> Dict[str, Any]:
     base = rp5_logs_dir()
     os.makedirs(base, exist_ok=True)
-    path = os.path.join(base, f"{meta['ts']}.ver")
+    ts = meta.get("ts_utc") or meta.get("ts")
+    if not ts:
+        ts = datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+        meta = dict(meta)
+        meta["ts_utc"] = ts
+    path = os.path.join(base, f"{ts}.ver")
     try:
         with open(path, "w", encoding="utf-8") as fh:
             json.dump(meta, fh, indent=2)
         enriched = dict(meta)
         enriched["path"] = path
+        try:
+            print(f"version_stamp={path}")
+            sys.stdout.flush()
+        except Exception:
+            pass
         return enriched
     except Exception:
         print("version_stamp=<unavailable>", file=sys.stderr)
@@ -214,11 +270,31 @@ def _emit_result(
     payload: Dict[str, Any] = {"result": kind, "ts": int(time.time())}
     if extra:
         payload.update(extra)
+    log_path = payload.get("log_path") or _result_log_path()
+    if log_path:
+        payload.setdefault("log_path", log_path)
+    meta = _version_metadata()
+    version_meta = meta
     if not kind.endswith("_OK"):
-        meta = _emit_version_stamp(_version_metadata())
-        payload["version"] = meta
+        version_meta = _emit_version_stamp(dict(meta))
+        payload["version"] = version_meta
     append_jsonl(_result_log_path(), payload)
     print(json.dumps(payload, sort_keys=True, separators=(",", ":")))
+    sha_cli = (version_meta.get("sha_cli") or "")[:7] if isinstance(version_meta, dict) else ""
+    sha_main = (version_meta.get("sha_main") or "")[:7] if isinstance(version_meta, dict) else ""
+    why_text = str(payload.get("why") or payload.get("reason") or "")
+    device = payload.get("device") or _CURRENT_DEVICE or ""
+    total_ms = int(max(0.0, (time.perf_counter() - CLI_START_MONO) * 1000))
+    final_log_path = payload.get("log_path") or _result_log_path() or ""
+    final_line = (
+        f"result={kind} why={why_text} device={device} timing_total_ms={total_ms} "
+        f"log_path={final_log_path} sha_cli={sha_cli} sha_main={sha_main}"
+    )
+    try:
+        print(final_line)
+        sys.stdout.flush()
+    except Exception:
+        pass
     code = RESULT_CODES.get(kind, 1) if exit_code is None else exit_code
     raise SystemExit(code)
 
@@ -706,6 +782,25 @@ def _require_passphrase(path: Optional[str], context: str = "default") -> str:
     return normalized
 
 
+def _backup_existing_keyfile(mnt: str, keyfile_path: str) -> Optional[str]:
+    rel = keyfile_path.lstrip("/")
+    host_path = os.path.normpath(os.path.join(mnt, rel))
+    if not os.path.isfile(host_path):
+        return None
+    try:
+        with open(host_path, "rb") as src:
+            data = src.read()
+        if not data:
+            return None
+        with tempfile.NamedTemporaryFile(prefix="rp5-key-rotate-", dir="/tmp", delete=False) as tmp:
+            tmp.write(data)
+            tmp.flush()
+            os.fchmod(tmp.fileno(), 0o600)
+            return tmp.name
+    except Exception:
+        return None
+
+
 def _run_postcheck_only(
         plan: ProvisionPlan,
         flags: Flags,
@@ -802,8 +897,13 @@ def _main_impl(argv: Optional[list[str]] = None) -> int:  # pragma: no cover - e
 
     log_path = _announce_log_path()
 
+    global _CURRENT_DEVICE
+    _CURRENT_DEVICE = args.device
+
+    keyfile_auto_flag = bool(args.keyfile_auto or args.keyfile_rotate or args.remove_passphrase)
+
     keyfile_path = _normalize_keyfile_path(args.keyfile_path) or "/etc/cryptsetup-keys.d/cryptroot.key"
-    if args.keyfile_auto or args.keyfile_rotate or args.remove_passphrase:
+    if keyfile_auto_flag:
         keyfile_path = _require_keyfile_path(keyfile_path)
 
     try:
@@ -816,7 +916,7 @@ def _main_impl(argv: Optional[list[str]] = None) -> int:  # pragma: no cover - e
             tpm_keyscript=args.tpm_keyscript,
             assume_yes=args.assume_yes,
             skip_rsync=args.skip_rsync,
-            keyfile_auto=args.keyfile_auto,
+            keyfile_auto=keyfile_auto_flag,
             keyfile_path=keyfile_path,
             keyfile_rotate=args.keyfile_rotate,
             remove_passphrase=args.remove_passphrase,
@@ -837,7 +937,7 @@ def _main_impl(argv: Optional[list[str]] = None) -> int:  # pragma: no cover - e
         do_postcheck=args.do_postcheck,
         tpm_keyscript=args.tpm_keyscript,
         assume_yes=args.assume_yes,
-        keyfile_auto=args.keyfile_auto,
+        keyfile_auto=keyfile_auto_flag,
         keyfile_path=keyfile_path,
         keyfile_rotate=args.keyfile_rotate,
         remove_passphrase=args.remove_passphrase,
@@ -939,6 +1039,8 @@ def _main_impl(argv: Optional[list[str]] = None) -> int:  # pragma: no cover - e
     boot_surface: Optional[Dict[str, Any]] = None
     postcheck_pruned: Optional[Dict[str, Any]] = None
     keyfile_meta: Optional[Dict[str, Any]] = None
+    key_rotation_meta: Optional[Dict[str, Any]] = None
+    key_unlock_verified = False
     initramfs_key_meta: Optional[Dict[str, Any]] = None
     try:
         try:
@@ -954,7 +1056,7 @@ def _main_impl(argv: Optional[list[str]] = None) -> int:  # pragma: no cover - e
                     "skipped": True,
                     "exit": None,
                     "note": "rsync skipped via --skip-rsync",
-                    "summary": {"itemized_sample": [], "counts": {}, "stats": {}},
+                    "summary": {"itemized_sample": [], "counts": {}, "stats": {}, "numbers_block": []},
                     "stats": {},
                     "duration_sec": None,
                 }
@@ -997,6 +1099,12 @@ def _main_impl(argv: Optional[list[str]] = None) -> int:  # pragma: no cover - e
         assert_cmdline_uuid(mounts.esp, luks_uuid, root_mapper=root_mapper_path)
 
         if flags.keyfile_auto:
+            key_slots_before: set[int] = set()
+            try:
+                key_slots_before = luks_active_slots(dm.p3)
+            except Exception:
+                key_slots_before = set()
+            old_key_backup = _backup_existing_keyfile(mounts.mnt, flags.keyfile_path) if flags.keyfile_rotate else None
             try:
                 keyfile_meta = ensure_keyfile(
                     mounts.mnt,
@@ -1006,20 +1114,97 @@ def _main_impl(argv: Optional[list[str]] = None) -> int:  # pragma: no cover - e
                     rotate=flags.keyfile_rotate,
                 )
             except PermissionError as exc:
+                if old_key_backup:
+                    try:
+                        os.remove(old_key_backup)
+                    except Exception:
+                        pass
                 _emit_result(
                     "FAIL_KEYFILE_PERMS",
                     extra={"path": flags.keyfile_path, "error": str(exc)},
                 )
             except ValueError as exc:
+                if old_key_backup:
+                    try:
+                        os.remove(old_key_backup)
+                    except Exception:
+                        pass
                 _emit_result(
                     "FAIL_KEYFILE_PATH",
                     extra={"path": flags.keyfile_path, "error": str(exc)},
                 )
             except Exception as exc:  # noqa: BLE001
+                if old_key_backup:
+                    try:
+                        os.remove(old_key_backup)
+                    except Exception:
+                        pass
                 _emit_result(
                     "FAIL_LUKS",
                     extra={"phase": "luksAddKey", "error": str(exc)},
                 )
+
+            key_slots_after: set[int] = set()
+            try:
+                key_slots_after = luks_active_slots(dm.p3)
+            except Exception:
+                key_slots_after = set(key_slots_before)
+
+            if keyfile_meta is not None:
+                keyfile_meta["slots_before"] = sorted(key_slots_before)
+                keyfile_meta["slots_after"] = sorted(key_slots_after)
+                added = sorted(key_slots_after - key_slots_before)
+                if added and not keyfile_meta.get("slot"):
+                    keyfile_meta["slot"] = added[-1]
+
+            keyfile_host_path = keyfile_meta.get("host_path") if isinstance(keyfile_meta, dict) else None
+            if keyfile_host_path:
+                try:
+                    key_unlock_verified = test_keyfile_unlock(dm.p3, keyfile_host_path)
+                except Exception:
+                    key_unlock_verified = False
+                if keyfile_meta is not None:
+                    keyfile_meta["unlock_test_after"] = key_unlock_verified
+
+            if flags.keyfile_rotate:
+                new_slot = keyfile_meta.get("slot") if isinstance(keyfile_meta, dict) else None
+                old_slot_index = None
+                if not key_unlock_verified:
+                    if old_key_backup:
+                        try:
+                            os.remove(old_key_backup)
+                        except Exception:
+                            pass
+                    _emit_result(
+                        "FAIL_LUKS",
+                        extra={"phase": "keyfile_rotate", "why": "new keyfile failed --test-passphrase"},
+                    )
+                if old_key_backup:
+                    try:
+                        before_remove = set(key_slots_after) if key_slots_after else luks_active_slots(dm.p3)
+                        remove_keyfile_slot(dm.p3, old_key_backup)
+                        after_remove = luks_active_slots(dm.p3)
+                        removed_slots = sorted(before_remove - after_remove)
+                        if removed_slots:
+                            old_slot_index = removed_slots[0]
+                        key_slots_after = after_remove
+                    except Exception as exc:
+                        try:
+                            os.remove(old_key_backup)
+                        except Exception:
+                            pass
+                        _emit_result(
+                            "FAIL_LUKS",
+                            extra={"phase": "keyfile_rotate_remove", "error": str(exc)},
+                        )
+                    else:
+                        try:
+                            os.remove(old_key_backup)
+                        except Exception:
+                            pass
+                    if keyfile_meta is not None:
+                        keyfile_meta["slots_after"] = sorted(key_slots_after)
+                key_rotation_meta = {"old_slot": old_slot_index, "new_slot": new_slot}
 
         try:
             packages_meta = ensure_packages(mounts.mnt)
@@ -1062,17 +1247,24 @@ def _main_impl(argv: Optional[list[str]] = None) -> int:  # pragma: no cover - e
             )
 
         if flags.remove_passphrase:
-            keyfile_ok = bool(
-                flags.keyfile_auto
-                and keyfile_meta
-                and initramfs_key_meta
-                and initramfs_key_meta.get("included")
+            keyfile_in_initramfs = bool(initramfs_key_meta and initramfs_key_meta.get("included"))
+            prerequisites_ok = bool(
+                flags.keyfile_auto and keyfile_meta and keyfile_in_initramfs and key_unlock_verified
             )
-            if not keyfile_ok:
+            if not prerequisites_ok:
+                why = "keyfile prerequisites not met"
+                if not keyfile_meta:
+                    why = "keyfile metadata missing"
+                elif not keyfile_in_initramfs:
+                    why = "initramfs missing embedded keyfile"
+                elif not key_unlock_verified:
+                    why = "keyfile unlock test failed"
                 _emit_result(
-                    "FAIL_SAFETY_GUARD",
+                    "FAIL_REMOVE_PASSPHRASE_BLOCKED",
                     extra={
-                        "why": "keyfile verification incomplete; refusing to remove passphrase",
+                        "why": why,
+                        "key_unlock_verified": key_unlock_verified,
+                        "initramfs_has_key": keyfile_in_initramfs,
                     },
                 )
             try:
@@ -1132,6 +1324,18 @@ def _main_impl(argv: Optional[list[str]] = None) -> int:  # pragma: no cover - e
     except Exception:
         pass
 
+    initramfs_block = {
+        "image": boot_surface.get("initramfs_path") if boot_surface else None,
+        "ensure_packages": packages_meta,
+        "rebuild": rebuild_meta,
+        "verification": boot_surface,
+        "keyfile": bool(flags.keyfile_auto),
+        "keyfile_included": bool(initramfs_key_meta.get("included")) if initramfs_key_meta else False,
+        "keyfile_name": initramfs_key_meta.get("basename") if initramfs_key_meta else None,
+    }
+    if initramfs_key_meta:
+        initramfs_block["keyfile_meta"] = initramfs_key_meta
+
     result_payload = {
         "sync_performed": sync_performed,
         "flags": vars(flags),
@@ -1161,15 +1365,7 @@ def _main_impl(argv: Optional[list[str]] = None) -> int:  # pragma: no cover - e
             "stats": rsync_meta.get("stats"),
             "summary": rsync_meta.get("summary"),
         },
-        "initramfs": {
-            "image": boot_surface.get("initramfs_path") if boot_surface else None,
-            "ensure_packages": packages_meta,
-            "rebuild": rebuild_meta,
-            "verification": boot_surface,
-            "keyfile_included": initramfs_key_meta.get("included") if initramfs_key_meta else None,
-            "keyfile_name": initramfs_key_meta.get("basename") if initramfs_key_meta else None,
-            "keyfile": initramfs_key_meta,
-        },
+        "initramfs": initramfs_block,
         "postcheck": {
             "requested": flags.do_postcheck,
             "heartbeat": heartbeat_meta,
@@ -1189,7 +1385,12 @@ def _main_impl(argv: Optional[list[str]] = None) -> int:  # pragma: no cover - e
         "steps": planned_steps,
         "same_underlying_disk": same_disk,
     }
+    result_payload["device"] = plan.device
     result_payload["keyfile"] = keyfile_meta
+    if key_rotation_meta:
+        result_payload["key_rotation"] = key_rotation_meta
+    if flags.keyfile_auto:
+        result_payload["security_caveat"] = "embedded_key_in_initramfs"
     result_payload["key_unlock"] = (
         {"mode": "keyfile", "path": flags.keyfile_path}
         if flags.keyfile_auto
@@ -1197,6 +1398,9 @@ def _main_impl(argv: Optional[list[str]] = None) -> int:  # pragma: no cover - e
     )
     if not flags.do_postcheck:
         result_payload["postcheck"]["offer"] = "--do-postcheck"
+    result_payload.setdefault("timing", {})["total_ms"] = int(
+        max(0.0, (time.perf_counter() - CLI_START_MONO) * 1000)
+    )
     artifact_path = _write_json_artifact("full", result_payload)
     result_payload["artifact"] = artifact_path
     preboot_payload = dict(result_payload)

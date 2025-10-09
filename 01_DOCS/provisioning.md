@@ -24,11 +24,18 @@ python -m provision /dev/nvme0n1 --passphrase-file ~/secret.txt --yes --do-postc
 - `--plan` and `--dry-run` are **strictly non-destructive** and print a JSON plan.
 - `--do-postcheck` (by itself) is **non-destructive**: it opens the LUKS volume, mounts the target root, installs the post-boot checker, writes the recovery doc, unmounts and closes.
 - `--yes` performs the full provision (partitioning, LUKS/LVM, rsync, firmware, boot plumbing, initramfs).
+- `--keyfile-auto` generates a 64-byte key at `--keyfile-path` (default `/etc/cryptsetup-keys.d/cryptroot.key`) and ensures the initramfs embeds it so the device can unlock headlessly.
+- `--keyfile-rotate` adds a fresh keyfile slot (optionally removing the previous slot when `--remove-passphrase` is also supplied).
+- `--remove-passphrase` only succeeds after the new keyfile is verified and the initramfs is rebuilt with the embedded key; on failure the run exits with `FAIL_REMOVE_PASSPHRASE_BLOCKED`.
+- `--skip-rsync` is allowed for plan/dry-run; using it during a full run emits `FAIL_RSYNC_SKIPPED_FULLRUN`.
 
 ## Keyfile
 
 - Use `--passphrase-file ~/secret.txt`. Tilde expands to `/home/<user>/secret.txt`. The program also expands `~` internally.
 - The file must exist and be non-empty; permissions should be owner-only (e.g., `400` or `600`).
+- `--keyfile-auto` will create `/etc/cryptsetup-keys.d/cryptroot.key` (owner `root:root`, mode `0400`), add it to LUKS, write the `cryptroot` entry in `/mnt/nvme/etc/crypttab`, and rebuild the initramfs with the key bundled.
+- Provisioning and planning JSON exposes `"key_unlock": { "mode": "keyfile", "path": "…" }` when the keyfile flow is active and sets `"security_caveat": "embedded_key_in_initramfs"` to call out the risk profile.
+- `--keyfile-rotate` performs safe rotation: a new key is added and tested (`cryptsetup --test-passphrase`), the initramfs is rebuilt, and the previous keyslot is removed only after verification. Combine with `--remove-passphrase` to drop the human passphrase entirely.
 
 ## Postcheck verification
 
@@ -116,7 +123,12 @@ mirrors what the provisioner now automates.
 
 ### Rsync policy
 - Rsync is **strict by default**: any non-zero exit (including 23/24) aborts the run.
-- Stats and itemized changes are printed in the final JSON to aid diagnosis.
+- Stats and itemized changes are printed in the final JSON to aid diagnosis. Structured numeric telemetry now appears under `rsync.stats` (files transferred, bytes sent/received, throughput, etc.).
+
+### Safety + result metadata
+
+- A pre-flight `safety_check={…}` record prints before any destructive actions, capturing the current root and target block-device mapping plus `same_underlying_disk` both inside the block and at the top level of the result payload.
+- Final JSON now includes `initramfs.keyfile_included`, `key_rotation` (when relevant), and always ends with `result=<CODE> why=<...> device=<...> timing_total_ms=<N> log_path=<...> sha_cli=<...> sha_main=<...>` for log scraping.
 
 
 ## Canonical Module Invocation (package at project root)

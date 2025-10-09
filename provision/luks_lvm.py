@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import json
 import os
+import re
 import stat
-from typing import Any, Dict
+from typing import Any, Dict, Iterable
 
 from .executil import run, udev_settle
 
@@ -96,13 +98,29 @@ def _ensure_file_secure(path: str) -> None:
             raise PermissionError(f"keyfile {path} must be owned by root:root")
 
 
+_KEY_SLOT_CREATED_RE = re.compile(r"key slot\s+(\d+)\s+created", re.IGNORECASE)
+
+
+def _parse_slot_from_output(streams: Iterable[str]) -> int | None:
+    for text in streams:
+        if not text:
+            continue
+        match = _KEY_SLOT_CREATED_RE.search(text)
+        if match:
+            try:
+                return int(match.group(1))
+            except (TypeError, ValueError):
+                return None
+    return None
+
+
 def ensure_keyfile(
-        mnt: str,
-        keyfile_path: str,
-        luks_device: str,
-        passphrase_file: str,
-        *,
-        rotate: bool = False,
+    mnt: str,
+    keyfile_path: str,
+    luks_device: str,
+    passphrase_file: str,
+    *,
+    rotate: bool = False,
 ) -> Dict[str, Any]:
     """Ensure a keyfile exists on the target root and is enrolled in the LUKS device."""
 
@@ -118,6 +136,8 @@ def ensure_keyfile(
     existed = os.path.exists(host_path)
     created = False
     rotated = False
+    refreshed = False
+
     if rotate or not existed:
         data = os.urandom(64)
         with open(host_path, "wb") as fh:
@@ -129,22 +149,64 @@ def ensure_keyfile(
                 pass
         created = not existed
         rotated = existed and rotate
+    else:
+        try:
+            st = os.stat(host_path)
+        except FileNotFoundError:
+            st = None
+        if not st or st.st_size != 64:
+            data = os.urandom(64)
+            with open(host_path, "wb") as fh:
+                fh.write(data)
+                try:
+                    fh.flush()
+                    os.fsync(fh.fileno())
+                except OSError:
+                    pass
+            refreshed = True
+
     _ensure_file_secure(host_path)
 
-    add_cmd = [
-        "cryptsetup",
-        "luksAddKey",
-        luks_device,
-        host_path,
-        "--key-file",
-        passphrase_file,
-    ]
-    add_res = run(add_cmd, check=False, timeout=120.0)
-    combined = f"{(add_res.out or '').strip()}\n{(add_res.err or '').strip()}".lower()
-    if add_res.rc != 0 and "already" not in combined:
-        raise RuntimeError(f"cryptsetup luksAddKey failed: rc={add_res.rc}")
-    slot_added = add_res.rc == 0
-    return {"path": keyfile_path, "created": created, "rotated": rotated, "slot_added": slot_added}
+    unlock_precheck = False
+    try:
+        unlock_precheck = test_keyfile_unlock(luks_device, host_path)
+    except Exception:
+        unlock_precheck = False
+
+    slot_added = False
+    slot_index: int | None = None
+    add_res = None
+    if not unlock_precheck:
+        add_cmd = [
+            "cryptsetup",
+            "luksAddKey",
+            luks_device,
+            host_path,
+            "--key-file",
+            passphrase_file,
+        ]
+        add_res = run(add_cmd, check=False, timeout=120.0)
+        combined = f"{(add_res.out or '').strip()}\n{(add_res.err or '').strip()}".lower()
+        if add_res.rc != 0 and "already" not in combined:
+            raise RuntimeError(f"cryptsetup luksAddKey failed: rc={add_res.rc}")
+        slot_added = add_res.rc == 0
+        if slot_added:
+            slot_index = _parse_slot_from_output((add_res.out or "", add_res.err or ""))
+    st = os.stat(host_path)
+    meta: Dict[str, Any] = {
+        "path": keyfile_path,
+        "host_path": host_path,
+        "created": created,
+        "rotated": rotated,
+        "refreshed": refreshed,
+        "slot_added": slot_added,
+        "slot": slot_index,
+        "unlock_test_before": unlock_precheck,
+        "length": st.st_size,
+        "mode": f"0{stat.S_IMODE(st.st_mode):o}",
+        "owner": {"uid": st.st_uid, "gid": st.st_gid},
+    }
+    return meta
 
 
 def remove_passphrase_keyslot(luks_device: str, passphrase_file: str) -> bool:
@@ -153,3 +215,61 @@ def remove_passphrase_keyslot(luks_device: str, passphrase_file: str) -> bool:
     if res.rc != 0:
         raise RuntimeError(f"cryptsetup luksRemoveKey failed: rc={res.rc}")
     return True
+
+
+def remove_keyfile_slot(luks_device: str, keyfile_path: str) -> bool:
+    cmd = ["cryptsetup", "luksRemoveKey", luks_device, "--key-file", keyfile_path]
+    res = run(cmd, check=False, timeout=120.0)
+    if res.rc != 0:
+        raise RuntimeError(f"cryptsetup luksRemoveKey failed: rc={res.rc}")
+    return True
+
+
+def luks_active_slots(luks_device: str) -> set[int]:
+    res = run(["cryptsetup", "luksDump", "--json", luks_device], check=False, timeout=120.0)
+    if res.rc != 0:
+        raise RuntimeError(f"cryptsetup luksDump failed: rc={res.rc}")
+    try:
+        payload = json.loads(res.out or "{}")
+    except json.JSONDecodeError as exc:  # pragma: no cover - defensive
+        raise RuntimeError("failed to parse cryptsetup luksDump output") from exc
+    slots: set[int] = set()
+    keyslots = payload.get("keyslots")
+    if isinstance(keyslots, dict):
+        for key, entry in keyslots.items():
+            candidates = []
+            if isinstance(entry, dict) and "keyslot" in entry:
+                candidates.append(entry.get("keyslot"))
+            candidates.append(key)
+            for cand in candidates:
+                try:
+                    slots.add(int(str(cand)))
+                    break
+                except (TypeError, ValueError):
+                    continue
+    elif isinstance(keyslots, list):
+        for entry in keyslots:
+            if isinstance(entry, dict):
+                value = entry.get("keyslot")
+            else:
+                value = entry
+            try:
+                slots.add(int(str(value)))
+            except (TypeError, ValueError):
+                continue
+    return slots
+
+
+def test_keyfile_unlock(luks_device: str, keyfile_path: str, mapper_name: str | None = None) -> bool:
+    mapper = mapper_name or f"rp5-test-{os.getpid()}"
+    cmd = [
+        "cryptsetup",
+        "--test-passphrase",
+        "--key-file",
+        keyfile_path,
+        "luksOpen",
+        luks_device,
+        mapper,
+    ]
+    res = run(cmd, check=False, timeout=120.0)
+    return res.rc == 0

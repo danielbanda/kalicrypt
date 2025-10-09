@@ -1,4 +1,7 @@
 """Ensure/rebuild/verify initramfs in target root (Phase 2)."""
+
+from __future__ import annotations
+
 import os
 import re
 from pathlib import PurePosixPath
