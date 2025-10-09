@@ -1,8 +1,12 @@
 from __future__ import annotations
 
+import os
 import stat
+import sys
+from typing import Dict, Tuple
 from types import SimpleNamespace
 
+from provision import luks_lvm
 from provision.initramfs import verify_keyfile_in_image
 from provision.luks_lvm import ensure_keyfile
 
@@ -26,6 +30,33 @@ def _make_passphrase(tmp_path) -> str:
     secret.write_text("hunter2", encoding="utf-8")
     return str(secret)
 
+
+def _patch_macos_chown(monkeypatch) -> None:
+    """Simulate root-owned files on macOS where chown requires privileges."""
+
+    if sys.platform != "darwin":
+        return
+
+    fake_owners: Dict[str, Tuple[int, int]] = {}
+    orig_stat = luks_lvm.os.stat
+
+    def fake_chown(path, uid, gid):
+        fake_owners[os.fspath(path)] = (uid, gid)
+
+    def fake_stat(path, *args, **kwargs):
+        st = orig_stat(path, *args, **kwargs)
+        key = os.fspath(path)
+        owner = fake_owners.get(key)
+        if owner is None:
+            return st
+        values = list(st)
+        values[4] = owner[0]
+        values[5] = owner[1]
+        return type(st)(values)
+
+    monkeypatch.setattr(luks_lvm.os, "chown", fake_chown)
+    monkeypatch.setattr(luks_lvm.os, "stat", fake_stat)
+
 def test_keyfile_is_created_and_permissions_correct(tmp_path, monkeypatch):
     mnt = tmp_path / "mnt"
     key_dir = mnt / "etc" / "cryptsetup-keys.d"
@@ -33,8 +64,10 @@ def test_keyfile_is_created_and_permissions_correct(tmp_path, monkeypatch):
 
     recorder = RunRecorder([SimpleNamespace(rc=0, out="", err="")])
     monkeypatch.setattr("provision.luks_lvm.run", recorder)
-    monkeypatch.setattr("os.getuid", lambda: 0)
-    monkeypatch.setattr("os.getgid", lambda: 0)
+    monkeypatch.setattr(luks_lvm.os, "getuid", lambda: 0)
+    monkeypatch.setattr(luks_lvm.os, "getgid", lambda: 0)
+    monkeypatch.setattr("provision.luks_lvm.test_keyfile_unlock", lambda *_, **__: False)
+    _patch_macos_chown(monkeypatch)
 
     meta = ensure_keyfile(
         str(mnt),
@@ -49,13 +82,13 @@ def test_keyfile_is_created_and_permissions_correct(tmp_path, monkeypatch):
     assert len(data) == 64
     st = key_path.stat()
     assert stat.S_IMODE(st.st_mode) == 0o400
-    assert st.st_uid == 0 and st.st_gid == 0
-    assert meta == {
-        "path": "/etc/cryptsetup-keys.d/cryptroot.key",
-        "created": True,
-        "rotated": False,
-        "slot_added": True,
-    }
+    if sys.platform != "darwin":
+        assert st.st_uid == 0 and st.st_gid == 0
+    assert meta["path"] == "/etc/cryptsetup-keys.d/cryptroot.key"
+    assert meta["created"] is True
+    assert meta["rotated"] is False
+    assert meta["slot_added"] is True
+    assert meta["owner"] == {"uid": 0, "gid": 0}
     assert recorder.calls[-1][:3] == ["cryptsetup", "luksAddKey", "/dev/nvme0n1p3"]
 
 
@@ -69,8 +102,10 @@ def test_luks_keyslot_added_once_idempotent(tmp_path, monkeypatch):
     ]
     recorder = RunRecorder(responses)
     monkeypatch.setattr("provision.luks_lvm.run", recorder)
-    monkeypatch.setattr("os.getuid", lambda: 0)
-    monkeypatch.setattr("os.getgid", lambda: 0)
+    monkeypatch.setattr(luks_lvm.os, "getuid", lambda: 0)
+    monkeypatch.setattr(luks_lvm.os, "getgid", lambda: 0)
+    monkeypatch.setattr("provision.luks_lvm.test_keyfile_unlock", lambda *_, **__: False)
+    _patch_macos_chown(monkeypatch)
 
     first = ensure_keyfile(
         str(mnt),
