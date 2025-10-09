@@ -134,7 +134,9 @@ def parse_rsync_stats(text: str) -> dict:
     return stats
 
 
-EXCLUDES = ["/proc", "/sys", "/dev", "/run", "/mnt", "/media", "/tmp", "/var/tmp"]
+EXCLUDES = ["/proc", "/sys", "/dev", "/run", "/mnt", "/media", "/tmp", "/var/tmp",
+            "/etc/cryptsetup-keys.d/***",
+            "/etc/cryptsetup-initramfs/conf-hook"]
 
 
 def rsync_root(dst_mnt: str, dry_run: bool = False, timeout_sec: int = 360, exclude_boot: bool = False):
