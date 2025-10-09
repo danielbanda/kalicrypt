@@ -1252,31 +1252,31 @@ def _main_impl(argv: Optional[list[str]] = None) -> int:  # pragma: no cover - e
                 "FAIL_INITRAMFS_VERIFY",
                 extra={"phase": "rebuild", "error": str(exc)},
             )
-        # if flags.keyfile_auto:
-        #     expected_key_entry = "etc/cryptsetup-keys.d/cryptroot.key"
-        #     verify_target = initramfs_image_path or mounts.esp
-        #     initramfs_key_meta = verify_keyfile_in_image(verify_target, f"/{expected_key_entry}")
-        #     if initramfs_key_meta is not None:
-        #         initramfs_key_meta["expected"] = expected_key_entry
-        #     if not initramfs_key_meta.get("included"):
-        #         _emit_result(
-        #             "FAIL_INITRAMFS_VERIFY",
-        #             extra={
-        #                 "image": initramfs_key_meta.get("image") or verify_target,
-        #                 "expected": expected_key_entry,
-        #             },
-        #         )
-        # image_basename = os.path.basename(initramfs_image_path) if initramfs_image_path else "initramfs_2712"
-        # write_config(mounts.esp, initramfs_image=image_basename)
-        # boot_surface = verify_initramfs(mounts.esp, luks_uuid=luks_uuid)
-        # try:
-        #     boot_surface = require_boot_surface_ok(boot_surface)
-        # except InitramfsVerificationError as exc:
-        #     _emit_result(
-        #         "FAIL_INITRAMFS_VERIFY",
-        #         extra={"why": exc.why, "checks": exc.result},
-        #     )
-        # 
+        if flags.keyfile_auto:
+            expected_key_entry = "etc/cryptsetup-keys.d/cryptroot.key"
+            verify_target = initramfs_image_path or mounts.esp
+            initramfs_key_meta = verify_keyfile_in_image(verify_target, f"/{expected_key_entry}")
+            if initramfs_key_meta is not None:
+                initramfs_key_meta["expected"] = expected_key_entry
+            if not initramfs_key_meta.get("included"):
+                _emit_result(
+                    "FAIL_INITRAMFS_VERIFY",
+                    extra={
+                        "image": initramfs_key_meta.get("image") or verify_target,
+                        "expected": expected_key_entry,
+                    },
+                )
+        image_basename = os.path.basename(initramfs_image_path) if initramfs_image_path else "initramfs_2712"
+        write_config(mounts.esp, initramfs_image=image_basename)
+        boot_surface = verify_initramfs(mounts.esp, luks_uuid=luks_uuid)
+        try:
+            boot_surface = require_boot_surface_ok(boot_surface)
+        except InitramfsVerificationError as exc:
+            _emit_result(
+                "FAIL_INITRAMFS_VERIFY",
+                extra={"why": exc.why, "checks": exc.result},
+            )
+
         # if flags.remove_passphrase:
         #     keyfile_in_initramfs = bool(initramfs_key_meta and initramfs_key_meta.get("included"))
         #     prerequisites_ok = bool(
