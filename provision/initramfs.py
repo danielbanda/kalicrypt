@@ -179,7 +179,7 @@ def rebuild(target: str, dry_run: bool = False, *, force_prompt: bool = True) ->
     }
 
     # create → update
-    argv_create = ["chroot", mnt, "/usr/sbin/update-initramfs", "-c", "-k", kver, "$(ls /mnt/nvme/boot | sed -n 's/^initrd\.img-\(.*\)$/\1/p')"]
+    argv_create = ["chroot", mnt, "/usr/sbin/update-initramfs", "-c", "-k", kver]
     res = run(argv_create, check=False, dry_run=dry_run, timeout=INITRAMFS_TIMEOUT)
     telemetry["attempts"].append({"mode": "create", "argv": argv_create, **_tails(res)})
 
