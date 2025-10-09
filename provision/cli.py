@@ -942,6 +942,7 @@ def _main_impl(argv: Optional[list[str]] = None) -> int:  # pragma: no cover - e
     _emit_safety_check(safety_snapshot)
 
     ok, reason = safety.guard_not_live_disk(plan.device)
+    partitioning.guard_not_live_root(plan.device)
     if not ok:
         extra = dict(safety_snapshot)
         extra["reason"] = reason or "live disk guard triggered"

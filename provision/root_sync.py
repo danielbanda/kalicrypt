@@ -1,3 +1,4 @@
+import sys
 from __future__ import annotations
 
 import os
@@ -133,7 +134,7 @@ def parse_rsync_stats(text: str) -> dict:
     return stats
 
 
-EXCLUDES = ["/proc", "/sys", "/dev", "/run", "/mnt", "/media", "/tmp"]
+EXCLUDES = ["/proc", "/sys", "/dev", "/run", "/mnt", "/media", "/tmp", "/var/tmp"]
 
 
 def rsync_root(dst_mnt: str, dry_run: bool = False, timeout_sec: int = 360, exclude_boot: bool = False):
@@ -164,7 +165,7 @@ def rsync_root(dst_mnt: str, dry_run: bool = False, timeout_sec: int = 360, excl
         except subprocess.CalledProcessError as e:
             if e.returncode in (23, 24):
                 print(
-                    f"[WARN] rsync completed with return code {e.returncode} (partial transfer/vanished files). Continuing.")
+                    f"[WARN] rsync completed with return code {e.returncode} (partial transfer/vanished files, file=sys.stderr). Continuing.")
                 e.duration = time.perf_counter() - start_time
                 e.retries = retries
                 return e

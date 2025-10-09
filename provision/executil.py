@@ -57,7 +57,7 @@ def _log_event(kind: str, cmd: list[str], rc: int = None, out: str = None, err: 
             with open(path, "a", encoding="utf-8") as f:
                 f.write(json.dumps(line) + "\n")
     except Exception:
-        pass
+        raise
 
 
 class Result:
@@ -77,7 +77,7 @@ def _write_jsonl(obj: dict):
             with open(path, "a", encoding="utf-8") as f:
                 f.write(json.dumps(obj) + "\n")
     except Exception:
-        pass
+        raise
 
 
 def log(level: str, event: str, **fields):
@@ -108,7 +108,7 @@ def run(
     try:
         trace('exec.start', cmd=list(cmd))
     except Exception:
-        pass
+        raise
     _log_event("exec", list(cmd))
     started = time.time()
     if dry_run:
@@ -122,7 +122,7 @@ def run(
         try:
             subprocess.run(["udevadm", "settle"], check=False)
         except Exception:
-            pass
+        raise
         env2 = (env or os.environ).copy()
         env2.setdefault('RP5_LOG_LEVEL', LOG_LEVEL)
         proc = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout, env=env2)
@@ -130,7 +130,7 @@ def run(
     try:
         trace('exec.done', cmd=list(cmd), rc=proc.returncode, dur=dur)
     except Exception:
-        pass
+        raise
     _log_event("done", list(cmd), rc=proc.returncode, out=proc.stdout, err=proc.stderr, dur=dur)
     if check and proc.returncode != 0:
         raise subprocess.CalledProcessError(proc.returncode, cmd, proc.stdout, proc.stderr)
@@ -141,7 +141,7 @@ def udev_settle():
     try:
         subprocess.run(["udevadm", "settle"], check=False)
     except Exception:
-        pass
+        raise
 
 
 def with_backoff(fn, tries: int = 3, base: float = 0.5, max_delay: float = 4.0):
@@ -164,4 +164,4 @@ def append_jsonl(path: str, obj: dict):
         with open(path, "a", encoding="utf-8") as f:
             f.write(json.dumps(obj, ensure_ascii=False) + "\n")
     except Exception:
-        pass
+        raise
