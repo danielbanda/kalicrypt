@@ -161,7 +161,15 @@ def rsync_root(dst_mnt: str, dry_run: bool = False, timeout_sec: int = 360, excl
         try:
             result = run(cmd, check=True, dry_run=dry_run, timeout=timeout_sec)
             result.retries = retries
-            run("rsync -aR /etc/cryptsetup-keys.d/cryptroot.key /etc/cryptsetup-initramfs/conf-hook /  /mnt/nvme/", check=True, dry_run=dry_run, timeout=timeout_sec)
+            cmd2 = [
+                rsync_path,
+                "-aR",
+                "/etc/cryptsetup-keys.d/cryptroot.key",
+                "/etc/cryptsetup-initramfs/conf-hook",
+                "/",
+                "/mnt/nvme/",
+                ]
+            run(cmd2, check=True, dry_run=dry_run, timeout=timeout_sec)
             return result
         except subprocess.CalledProcessError as e:
             if e.returncode in (23, 24):
