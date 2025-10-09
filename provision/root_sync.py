@@ -134,9 +134,7 @@ def parse_rsync_stats(text: str) -> dict:
     return stats
 
 
-EXCLUDES = ["/proc", "/sys", "/dev", "/run", "/mnt", "/media", "/tmp", "/var/tmp",
-            "/etc/cryptsetup-keys.d/***",
-            "/etc/cryptsetup-initramfs/conf-hook"]
+EXCLUDES = ["/proc", "/sys", "/dev", "/run", "/mnt", "/media", "/tmp", "/var/tmp"]
 
 
 def rsync_root(dst_mnt: str, dry_run: bool = False, timeout_sec: int = 360, exclude_boot: bool = False):
@@ -163,6 +161,7 @@ def rsync_root(dst_mnt: str, dry_run: bool = False, timeout_sec: int = 360, excl
         try:
             result = run(cmd, check=True, dry_run=dry_run, timeout=timeout_sec)
             result.retries = retries
+            run("rsync -aR /etc/cryptsetup-keys.d/cryptroot.key /etc/cryptsetup-initramfs/conf-hook /  /mnt/nvme/", check=True, dry_run=dry_run, timeout=timeout_sec)
             return result
         except subprocess.CalledProcessError as e:
             if e.returncode in (23, 24):
