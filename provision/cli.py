@@ -90,13 +90,10 @@ def _announce_log_path() -> str:
     path = _result_log_path()
     if not _LOG_ANNOUNCED:
         if path:
-            print(f"log_path={path}")
             try:
                 trace("cli.log_path", path=path)
             except Exception:
                 pass
-        else:
-            print("log_path=<unavailable>")
         try:
             sys.stdout.flush()
         except Exception:
