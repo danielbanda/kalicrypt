@@ -72,6 +72,71 @@ def test_run_does_not_add_sudo_when_root(monkeypatch):
     assert result["cmd"] == captured["cmd"]
 
 
+def test_verify_boot_surface_success(tmp_path, monkeypatch):
+    boot_dir = tmp_path / "firmware"
+    boot_dir.mkdir()
+
+    initramfs_path = boot_dir / "initramfs_2712"
+    initramfs_path.write_bytes(b"0" * verification.MIN_INITRAMFS_BYTES)
+
+    (boot_dir / "config.txt").write_text("initramfs initramfs_2712 followkernel\n")
+    (boot_dir / "cmdline.txt").write_text(
+        "cryptdevice=UUID=1234:cryptroot root=/dev/mapper/rp5vg-root"
+    )
+
+    def fake_run(cmd, capture_output=True, text=True, timeout=360):  # noqa: ANN001
+        assert cmd == ["lsinitramfs", str(initramfs_path)]
+        return DummyProcess(
+            rc=0,
+            stdout="bin/cryptsetup\nusr/lib/lvm\n",
+        )
+
+    monkeypatch.setattr(verification, "subprocess", types.SimpleNamespace(run=fake_run))
+
+    result = verification.verify_boot_surface(str(boot_dir), luks_uuid="1234")
+
+    assert result["ok"] is True
+    assert result["checks"]["lsinitramfs"]["ok"] is True
+    assert result["checks"]["initramfs_contents"]["ok"] is True
+    assert result["config_image"] == str(initramfs_path)
+    assert result["config_line"] == "initramfs initramfs_2712 followkernel"
+
+
+def test_verify_boot_surface_reports_missing_tokens(tmp_path, monkeypatch):
+    boot_dir = tmp_path / "firmware"
+    boot_dir.mkdir()
+
+    initramfs_path = boot_dir / "initramfs_2712"
+    initramfs_path.write_bytes(b"1" * verification.MIN_INITRAMFS_BYTES)
+
+    (boot_dir / "config.txt").write_text("initramfs initramfs_2712 followkernel\n")
+    (boot_dir / "cmdline.txt").write_text(
+        "cryptdevice=UUID=1234:cryptroot root=/dev/mapper/rp5vg-root"
+    )
+
+    def fake_run(cmd, capture_output=True, text=True, timeout=360):  # noqa: ANN001
+        return DummyProcess(rc=0, stdout="usr/bin/cryptsetup\n")
+
+    monkeypatch.setattr(verification, "subprocess", types.SimpleNamespace(run=fake_run))
+
+    result = verification.verify_boot_surface(str(boot_dir), luks_uuid="1234")
+
+    assert result["ok"] is False
+    assert result["checks"]["lsinitramfs"]["ok"] is True
+    assert result["checks"]["initramfs_contents"]["missing"] == ["lvm"]
+    assert any(err["check"] == "initramfs_contents" for err in result["errors"])
+
+
+def test_verify_boot_surface_missing_directory(tmp_path):
+    missing_dir = tmp_path / "nope"
+
+    result = verification.verify_boot_surface(str(missing_dir))
+
+    assert result["ok"] is False
+    assert result["checks"]["boot_dir_exists"]["ok"] is False
+    assert result["errors"][0]["check"] == "boot_dir_exists"
+
+
 def test_verify_sources_success(monkeypatch):
     mapping = {
         "/mnt/nvme": "/dev/mapper/rp5vg-root",
