@@ -4,6 +4,7 @@ import os
 import re
 import shutil
 import subprocess
+import sys
 import time
 from typing import Dict
 
@@ -133,7 +134,50 @@ def parse_rsync_stats(text: str) -> dict:
     return stats
 
 
-EXCLUDES = ["/proc", "/sys", "/dev", "/run", "/mnt", "/media", "/tmp"]
+_BASE_EXCLUDES = [
+    "/proc",
+    "/sys",
+    "/dev",
+    "/run",
+    "/mnt",
+    "/media",
+    "/tmp",
+    "/var/cache",
+    "/var/cache/apt",
+    "/var/cache/apt/archives",
+    "/var/cache/apt/archives/partial",
+    "/var/lib/apt/lists",
+    "/var/tmp",
+]
+
+_BOOT_EXCLUDES = ["/boot", "/boot/firmware"]
+
+
+def _exclude_paths(exclude_boot: bool) -> list[str]:
+    paths = list(_BASE_EXCLUDES)
+    if exclude_boot:
+        paths.extend(_BOOT_EXCLUDES)
+    # Preserve order but deduplicate
+    seen: set[str] = set()
+    ordered: list[str] = []
+    for item in paths:
+        normalized = item.rstrip("/") or "/"
+        if normalized in seen:
+            continue
+        seen.add(normalized)
+        ordered.append(normalized)
+    return ordered
+
+
+def _exclude_patterns(exclude_boot: bool) -> list[str]:
+    patterns: list[str] = []
+    for base in _exclude_paths(exclude_boot):
+        if base == "/":
+            continue
+        patterns.append(base)
+        if not base.endswith("/**"):
+            patterns.append(f"{base}/**")
+    return patterns
 
 
 def rsync_root(dst_mnt: str, dry_run: bool = False, timeout_sec: int = 360, exclude_boot: bool = False):
@@ -151,11 +195,8 @@ def rsync_root(dst_mnt: str, dry_run: bool = False, timeout_sec: int = 360, excl
             "--stats",
             "--itemize-changes",
         ]
-        for e in EXCLUDES:
-            base += ["--exclude", e]
-        if exclude_boot:
-            for e in ("/boot", "/boot/", "/boot/*", "/boot/firmware", "/boot/firmware/*"):
-                base += ["--exclude", e]
+        for pattern in _exclude_patterns(exclude_boot):
+            base += ["--exclude", pattern]
         cmd = base + ["/", dst]
         try:
             result = run(cmd, check=True, dry_run=dry_run, timeout=timeout_sec)
@@ -164,7 +205,9 @@ def rsync_root(dst_mnt: str, dry_run: bool = False, timeout_sec: int = 360, excl
         except subprocess.CalledProcessError as e:
             if e.returncode in (23, 24):
                 print(
-                    f"[WARN] rsync completed with return code {e.returncode} (partial transfer/vanished files). Continuing.")
+                    f"[WARN] rsync completed with return code {e.returncode} (partial transfer/vanished files). Continuing.",
+                    file=sys.stderr,
+                )
                 e.duration = time.perf_counter() - start_time
                 e.retries = retries
                 return e
@@ -172,9 +215,12 @@ def rsync_root(dst_mnt: str, dry_run: bool = False, timeout_sec: int = 360, excl
     # Fallback: cp -a (no delete, best effort)
     result = run(["cp", "-a", "/.", dst_mnt], check=True, dry_run=dry_run, timeout=timeout_sec)
     result.retries = retries
-    if exclude_boot:
-        for rel in ("boot", "boot/firmware"):
-            run(["rm", "-rf", f"{dst_mnt.rstrip('/')}/{rel}"], check=False, dry_run=dry_run)
+    for path in _exclude_paths(exclude_boot):
+        if path == "/":
+            continue
+        rel = path.lstrip("/")
+        target = os.path.join(dst_mnt.rstrip("/"), rel)
+        run(["rm", "-rf", target], check=False, dry_run=dry_run)
     return result
 
 

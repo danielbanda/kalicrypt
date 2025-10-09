@@ -16,6 +16,7 @@ class Flags:
     keyfile_path: str = "/etc/cryptsetup-keys.d/cryptroot.key"
     keyfile_rotate: bool = False
     remove_passphrase: bool = False
+    json_output: bool = True
 
 
 @dataclass
