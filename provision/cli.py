@@ -1090,8 +1090,7 @@ def _main_impl(argv: Optional[list[str]] = None) -> int:  # pragma: no cover - e
         assert_crypttab_uuid(mounts.mnt, luks_uuid)
         if flags.keyfile_auto:
             try:
-                # write_initramfs_conf(mounts.mnt)
-                adawd = 1 + 1
+                write_initramfs_conf(mounts.mnt)
             except Exception as exc:  # noqa: BLE001
                 _emit_result(
                     "FAIL_INITRAMFS_VERIFY",
