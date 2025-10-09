@@ -221,54 +221,48 @@ def _line_lookup(lines: Iterable[str]) -> dict[str, str]:
         lookup[key] = stripped
     return lookup
 
-
 def write_config(
         dst_boot_fw: str,
-        initramfs_image: str = "initramfs_2712",
-        kernel_image: str = "vmlinuz",
-        device_tree: str = "bcm2712-rpi-5-b.dtb",
+        initramfs_image: str = "initramfs_2712"
 ):
+    import os, re
+
     path = os.path.join(dst_boot_fw, "config.txt")
     os.makedirs(dst_boot_fw, exist_ok=True)
-    existing_lines: list[str] = []
+
+    lines: list[str] = []
     if os.path.isfile(path):
         try:
             with open(path, "r", encoding="utf-8") as fh:
-                existing_lines = fh.read().splitlines()
+                lines = fh.read().splitlines()
         except Exception:
-            existing_lines = []
+            lines = []
 
-    updated_lines = list(existing_lines)
-    lookup = _line_lookup(updated_lines)
+    # If an explicit initramfs line already exists (non-comment), do nothing.
+    has_initramfs = any(
+        (not l.strip().startswith("#")) and re.match(r"\s*initramfs\s+\S+\s+followkernel\s*$", l, re.I)
+        for l in lines
+    )
+    if has_initramfs:
+        return
 
-    def _ensure_line(key: str, desired: str) -> None:
-        current = lookup.get(key)
-        if current and current.lower() == desired.lower():
-            return
-        if current:
-            idx = next(
-                (i for i, line in enumerate(updated_lines) if line.strip().lower() == current.lower()),
-                None,
-            )
-            if idx is not None:
-                updated_lines[idx] = desired
-        else:
-            updated_lines.append(desired)
-        lookup[key] = desired
+    # Ensure we’re in [all] context at the end; append header if file is empty or missing [all].
+    if not any(re.match(r"\s*\[all]\s*$", l, re.I) for l in lines):
+        if lines and lines[-1].strip() != "":
+            lines.append("")  # keep a clean blank line before [all]
+        lines.append("[all]")
 
-    _ensure_line("device_tree", f"device_tree={device_tree}")
-    _ensure_line("os_check", "os_check=0")
-    _ensure_line("kernel", f"kernel={kernel_image}")
-    _ensure_line("initramfs", f"initramfs {initramfs_image} followkernel")
+    # Append the single required line.
+    lines.append(f"initramfs {initramfs_image} followkernel")
 
-    if updated_lines != existing_lines:
-        with open(path, "w", encoding="utf-8") as fh:
-            fh.write("\n".join(updated_lines).rstrip() + "\n")
-            try:
-                fh.flush()
-                os.fsync(fh.fileno())
-            except Exception:
-                pass
+    # Write back only if changed; preserve a trailing newline.
+    with open(path, "w", encoding="utf-8") as fh:
+        fh.write("\n".join(lines).rstrip() + "\n")
+        try:
+            fh.flush()
+            os.fsync(fh.fileno())
+        except Exception:
+            raise
 
 
 def assert_cmdline_uuid(dst_boot_fw: str, luks_uuid: str, root_mapper: str | None = None):
