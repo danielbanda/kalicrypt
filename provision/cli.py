@@ -21,11 +21,19 @@ from .boot_plumbing import (
     write_config,
     write_crypttab,
     write_fstab,
+    write_initramfs_conf,
 )
 from .devices import kill_holders, probe, swapoff_all, uuid_of
 from .executil import append_jsonl, resolve_log_path, run, trace, udev_settle
 from .firmware import assert_essentials, populate_esp
-from .initramfs import ensure_packages, rebuild, verify as verify_initramfs, verify_keyfile_in_image
+from .initramfs import (
+    InitramfsResolutionError,
+    ensure_packages,
+    rebuild,
+    resolve_initramfs_image,
+    verify as verify_initramfs,
+    verify_keyfile_in_image,
+)
 from .luks_lvm import (
     activate_vg,
     close_luks,
@@ -83,6 +91,7 @@ _LOG_ANNOUNCED = False
 CLI_START_MONO = time.perf_counter()
 _CURRENT_DEVICE: Optional[str] = None
 _SHA_CACHE: Dict[str, Optional[str]] = {}
+JSON_OUTPUT_ENABLED = True
 
 
 def _result_log_path() -> str:
@@ -650,6 +659,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--keyfile-path", default="/etc/cryptsetup-keys.d/cryptroot.key")
     parser.add_argument("--keyfile-rotate", action="store_true")
     parser.add_argument("--remove-passphrase", action="store_true")
+    parser.add_argument("--json", dest="json", action="store_true", default=True)
+    parser.add_argument("--no-json", dest="json", action="store_false")
     return parser
 
 
@@ -872,6 +883,8 @@ def _run_postcheck_only(
 def _main_impl(argv: Optional[list[str]] = None) -> int:  # pragma: no cover - exercised via manual CLI
     parser = build_parser()
     args = parser.parse_args(argv)
+    global JSON_OUTPUT_ENABLED
+    JSON_OUTPUT_ENABLED = bool(getattr(args, "json", True))
     mode = "plan" if args.plan else ("dry" if args.dry_run else "full")
     sync_performed = not args.skip_rsync
 
@@ -942,7 +955,13 @@ def _main_impl(argv: Optional[list[str]] = None) -> int:  # pragma: no cover - e
     _emit_safety_check(safety_snapshot)
 
     ok, reason = safety.guard_not_live_disk(plan.device)
-    partitioning_guard_not_live_root(plan.device)
+    try:
+        partitioning_guard_not_live_root(plan.device)
+    except SystemExit as exc:
+        extra = dict(safety_snapshot)
+        reason_text = exc.code if isinstance(exc.code, str) else str(exc)
+        extra["reason"] = reason_text or "live disk guard triggered"
+        _emit_result("FAIL_LIVE_DISK_GUARD", extra=extra)
     if not ok:
         extra = dict(safety_snapshot)
         extra["reason"] = reason or "live disk guard triggered"
@@ -1010,6 +1029,7 @@ def _main_impl(argv: Optional[list[str]] = None) -> int:  # pragma: no cover - e
     mounts = mount_targets(dm.device, dry_run=False)
     bind_mounts(mounts.mnt)
 
+    initramfs_image_path: Optional[str] = None
     rsync_meta: Dict[str, Any] = {"exit": 0, "err": None, "out": None, "warning": False, "note": None}
     postcheck_report: Optional[Dict[str, Any]] = None
     cleanup_stats: Optional[Dict[str, Any]] = None
@@ -1069,6 +1089,14 @@ def _main_impl(argv: Optional[list[str]] = None) -> int:  # pragma: no cover - e
                 extra={"path": flags.keyfile_path, "error": str(exc)},
             )
         assert_crypttab_uuid(mounts.mnt, luks_uuid)
+        if flags.keyfile_auto:
+            try:
+                write_initramfs_conf(mounts.mnt)
+            except Exception as exc:  # noqa: BLE001
+                _emit_result(
+                    "FAIL_INITRAMFS_VERIFY",
+                    extra={"phase": "initramfs_conf", "error": str(exc)},
+                )
         root_mapper_path = dm.root_lv_path or f"/dev/mapper/{dm.vg}-{dm.lv}"
         write_cmdline(
             mounts.esp,
@@ -1183,10 +1211,21 @@ def _main_impl(argv: Optional[list[str]] = None) -> int:  # pragma: no cover - e
                             os.remove(old_key_backup)
                         except Exception:
                             pass
-                    if keyfile_meta is not None:
-                        keyfile_meta["slots_after"] = sorted(key_slots_after)
+                if keyfile_meta is not None:
+                    keyfile_meta["slots_after"] = sorted(key_slots_after)
                 key_rotation_meta = {"old_slot": old_slot_index, "new_slot": new_slot}
 
+        try:
+            initramfs_image_path = resolve_initramfs_image(mounts.esp)
+        except InitramfsResolutionError as exc:
+            _emit_result(
+                "FAIL_INITRAMFS_PATH",
+                extra={
+                    "boot_fw": mounts.esp,
+                    "config_path": exc.config_path,
+                    "snippet": exc.snippet,
+                },
+            )
         try:
             packages_meta = ensure_packages(mounts.mnt)
         except Exception as exc:  # noqa: BLE001
@@ -1195,29 +1234,29 @@ def _main_impl(argv: Optional[list[str]] = None) -> int:  # pragma: no cover - e
                 extra={"phase": "ensure_packages", "error": str(exc)},
             )
         try:
-            rebuild_meta = rebuild(mounts.mnt, force_prompt=not flags.keyfile_auto)
+            rebuild_target = initramfs_image_path or mounts.mnt
+            rebuild_meta = rebuild(rebuild_target, force_prompt=not flags.keyfile_auto)
         except Exception as exc:  # noqa: BLE001
             _emit_result(
                 "FAIL_INITRAMFS_VERIFY",
                 extra={"phase": "rebuild", "error": str(exc)},
             )
         if flags.keyfile_auto:
-            initramfs_key_meta = verify_keyfile_in_image(mounts.esp, flags.keyfile_path)
-            if (
-                    initramfs_key_meta.get("rc") != 0
-                    or not initramfs_key_meta.get("included")
-            ):
+            expected_key_entry = "etc/cryptsetup-keys.d/cryptroot.key"
+            verify_target = initramfs_image_path or mounts.esp
+            initramfs_key_meta = verify_keyfile_in_image(verify_target, f"/{expected_key_entry}")
+            if initramfs_key_meta is not None:
+                initramfs_key_meta["expected"] = expected_key_entry
+            if not initramfs_key_meta.get("included"):
                 _emit_result(
                     "FAIL_INITRAMFS_VERIFY",
                     extra={
-                        "why": "keyfile not found in initramfs",
-                        "details": {
-                            "rc": initramfs_key_meta.get("rc"),
-                            "target": initramfs_key_meta.get("target"),
-                        },
+                        "image": initramfs_key_meta.get("image") or verify_target,
+                        "expected": expected_key_entry,
                     },
                 )
-        write_config(mounts.esp)
+        image_basename = os.path.basename(initramfs_image_path) if initramfs_image_path else "initramfs_2712"
+        write_config(mounts.esp, initramfs_image=image_basename)
         boot_surface = verify_initramfs(mounts.esp, luks_uuid=luks_uuid)
         try:
             boot_surface = require_boot_surface_ok(boot_surface)
@@ -1307,6 +1346,7 @@ def _main_impl(argv: Optional[list[str]] = None) -> int:  # pragma: no cover - e
 
     initramfs_block = {
         "image": boot_surface.get("initramfs_path") if boot_surface else None,
+        "resolved_image": initramfs_image_path,
         "ensure_packages": packages_meta,
         "rebuild": rebuild_meta,
         "verification": boot_surface,

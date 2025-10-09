@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
+import glob
 import os
 import re
-from pathlib import PurePosixPath
-from typing import Any, Dict
+from pathlib import Path, PurePosixPath
+from typing import Any, Dict, Iterable
 
 from .executil import run
 from .verification import verify_boot_surface
@@ -13,6 +14,44 @@ from .verification import verify_boot_surface
 REQUIRED_PACKAGES = ("cryptsetup-initramfs", "lvm2", "initramfs-tools")
 APT_TIMEOUT = 600
 INITRAMFS_TIMEOUT = 360
+
+
+class InitramfsResolutionError(RuntimeError):
+    def __init__(self, config_path: str, snippet: Iterable[str]):
+        super().__init__("unable to resolve initramfs image")
+        self.config_path = config_path
+        self.snippet = list(snippet)
+
+
+def resolve_initramfs_image(esp_dir: str) -> str:
+    """Resolve the initramfs image path for the given firmware directory."""
+
+    esp = Path(esp_dir)
+    config_path = esp / "config.txt"
+    config_lines: list[str] = []
+    try:
+        config_lines = config_path.read_text(encoding="utf-8").splitlines()
+    except FileNotFoundError:
+        config_lines = []
+
+    for raw in config_lines:
+        stripped = raw.strip()
+        if not stripped or stripped.startswith("#"):
+            continue
+        parts = stripped.split()
+        if len(parts) >= 3 and parts[0].lower() == "initramfs" and parts[-1].lower() == "followkernel":
+            candidate = esp / parts[1]
+            return str(candidate)
+
+    candidates = glob.glob(str(esp / "initramfs_*"))
+    if candidates:
+        candidates.sort(key=lambda p: os.path.getmtime(p), reverse=True)
+        return candidates[0]
+
+    snippet = [line.strip() for line in config_lines[:8]]
+    if not snippet:
+        snippet = ["<empty config.txt>"]
+    raise InitramfsResolutionError(str(config_path), snippet)
 
 
 def ensure_packages(mnt: str, dry_run: bool = False) -> Dict[str, Any]:
@@ -93,7 +132,23 @@ def _detect_kernel_version(mnt: str) -> str:
     return sorted(cands)[0]
 
 
-def rebuild(mnt: str, dry_run: bool = False, *, force_prompt: bool = True) -> Dict[str, Any]:
+def rebuild(target: str, dry_run: bool = False, *, force_prompt: bool = True) -> Dict[str, Any]:
+    if os.path.isdir(target):
+        mnt = target
+        image_name = "initramfs_2712"
+        firmware_dir = os.path.join(mnt, "boot", "firmware")
+        image_path = os.path.join(firmware_dir, image_name)
+    else:
+        image_path = os.path.abspath(target)
+        firmware_dir = os.path.dirname(image_path)
+        if os.path.basename(firmware_dir) != "firmware":
+            raise RuntimeError("initramfs: expected image under /boot/firmware")
+        boot_dir = os.path.dirname(firmware_dir)
+        mnt = os.path.dirname(boot_dir)
+        if not mnt:
+            raise RuntimeError("initramfs: unable to determine target root from image path")
+        image_name = os.path.basename(image_path)
+
     if force_prompt:
         _ensure_crypttab_prompts(mnt)
     kver = _detect_kernel_version(mnt)
@@ -118,7 +173,7 @@ def rebuild(mnt: str, dry_run: bool = False, *, force_prompt: bool = True) -> Di
         telemetry["attempts"].append({"mode": "update", "rc": res.rc, "duration_sec": getattr(res, "duration", None)})
 
     copy_res = run(
-        ["chroot", mnt, "/bin/cp", "-f", f"/boot/initrd.img-{kver}", "/boot/firmware/initramfs_2712"],
+        ["chroot", mnt, "/bin/cp", "-f", f"/boot/initrd.img-{kver}", f"/boot/firmware/{image_name}"],
         check=True,
         dry_run=dry_run,
         timeout=INITRAMFS_TIMEOUT,
@@ -130,19 +185,20 @@ def rebuild(mnt: str, dry_run: bool = False, *, force_prompt: bool = True) -> Di
             "chroot",
             mnt,
             "/usr/bin/lsinitramfs",
-            "/boot/firmware/initramfs_2712",
+            f"/boot/firmware/{image_name}",
         ],
         check=True,
         dry_run=dry_run,
         timeout=INITRAMFS_TIMEOUT,
     )
     telemetry["list"] = {"rc": list_res.rc, "duration_sec": getattr(list_res, "duration", None)}
-    telemetry["image"] = os.path.join(mnt, "boot", "firmware", "initramfs_2712")
+    telemetry["image"] = os.path.join(mnt, "boot", "firmware", image_name)
+    telemetry["requested_image"] = image_path
 
     return telemetry
 
 
-def verify_keyfile_in_image(esp_dir: str, keyfile_path: str, image_name: str = "initramfs_2712") -> Dict[str, Any]:
+def verify_keyfile_in_image(target: str, keyfile_path: str, image_name: str | None = None) -> Dict[str, Any]:
     """Check that ``keyfile_path`` is present inside the assembled initramfs image."""
 
     key = PurePosixPath(keyfile_path)
@@ -163,7 +219,12 @@ def verify_keyfile_in_image(esp_dir: str, keyfile_path: str, image_name: str = "
     except ValueError:
         relative_entry = PurePosixPath(relative_entry)
     basename = relative_entry.name
-    image = os.path.join(esp_dir, image_name)
+    if image_name:
+        image = os.path.join(target, image_name)
+    elif os.path.isdir(target):
+        image = os.path.join(target, "initramfs_2712")
+    else:
+        image = target
     target_entry = relative_entry.as_posix() or basename
     res = run(["lsinitramfs", image], check=False, timeout=INITRAMFS_TIMEOUT)
     listing = (res.out or "") if res.rc == 0 else ""

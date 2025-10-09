@@ -159,9 +159,8 @@ def with_backoff(fn, tries: int = 3, base: float = 0.5, max_delay: float = 4.0):
 
 
 def append_jsonl(path: str, obj: dict):
-    try:
-        os.makedirs(os.path.dirname(path), exist_ok=True)
-        with open(path, "a", encoding="utf-8") as f:
-            f.write(json.dumps(obj, ensure_ascii=False) + "\n")
-    except Exception:
-        pass
+    directory = os.path.dirname(path)
+    if directory:
+        os.makedirs(directory, exist_ok=True)
+    with open(path, "a", encoding="utf-8") as f:
+        f.write(json.dumps(obj, ensure_ascii=False) + "\n")
