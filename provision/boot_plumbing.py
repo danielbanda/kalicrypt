@@ -295,10 +295,12 @@ def ensure_initramfs_conf(mnt):
         conf_dir = os.path.join(mnt, 'etc', 'initramfs-tools', 'conf.d')
         os.makedirs(conf_dir, exist_ok=True)
         conf_path = os.path.join(conf_dir, 'cryptsetup')
+        content = 'KEYFILE_PATTERN=/etc/cryptsetup-keys.d/*.key\nUMASK=0077\n'
         with open(conf_path, 'w', encoding='utf-8') as f:
-            f.write('KEYFILE_PATTERN=/etc/cryptsetup-keys.d/*.key\n')
-            f.write('UMASK=0077\n')
-    except Exception as e:
+            f.write(content)
+
+        return conf_path, content
+    except Exception:
         raise
 
 

@@ -1091,7 +1091,12 @@ def _main_impl(argv: Optional[list[str]] = None) -> int:  # pragma: no cover - e
         assert_crypttab_uuid(mounts.mnt, luks_uuid)
         if flags.keyfile_auto:
             try:
-                write_initramfs_conf(mounts.mnt)
+                # write_initramfs_conf(mounts.mnt)
+                crypt_path, content = ensure_initramfs_conf(mounts.esp)
+                _emit_result(
+                    "cryptsetup-keys",
+                    extra={"path": crypt_path, "content": content},
+                )
             except Exception as exc:  # noqa: BLE001
                 _emit_result(
                     "FAIL_INITRAMFS_VERIFY",
@@ -1106,7 +1111,6 @@ def _main_impl(argv: Optional[list[str]] = None) -> int:  # pragma: no cover - e
             lv=dm.lv,
         )
         assert_cmdline_uuid(mounts.esp, luks_uuid, root_mapper=root_mapper_path)
-        ensure_initramfs_conf(mounts.esp)
 
         # if flags.keyfile_auto:
         #     key_slots_before: set[int] = set()
