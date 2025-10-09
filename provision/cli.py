@@ -1236,8 +1236,8 @@ def _main_impl(argv: Optional[list[str]] = None) -> int:  # pragma: no cover - e
             )
         try:
             rebuild_target = initramfs_image_path or mounts.mnt
-            rebuild_meta = rebuild(rebuild_target, force_prompt=not flags.keyfile_auto)
             path, current, desired = write_initramfs_conf(mounts.mnt)
+            rebuild_meta = rebuild(rebuild_target, force_prompt=not flags.keyfile_auto)
             append_jsonl(_result_log_path(), { "the_update" : {"path": path, "current" : current, "desired" :desired } } )
         except Exception as exc:  # noqa: BLE001
             _emit_result(
