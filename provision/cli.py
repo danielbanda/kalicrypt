@@ -17,7 +17,6 @@ from . import safety
 from .boot_plumbing import (
     assert_cmdline_uuid,
     assert_crypttab_uuid,
-    ensure_cryptsetup_initramfs,
     write_cmdline,
     write_config,
     write_crypttab,
@@ -321,7 +320,7 @@ def _record_result(kind: str, extra: Optional[Dict[str, Any]] = None) -> Dict[st
     if extra:
         payload.update(extra)
     append_jsonl(_result_log_path(), payload)
-    # print(json.dumps(payload, sort_keys=True, separators=(",", ":")), file=sys.stderr)
+    print(json.dumps(payload, sort_keys=True, separators=(",", ":")), file=sys.stderr)
     return payload
 
 
@@ -345,6 +344,17 @@ def _planned_steps(flags: Flags) -> list[str]:
     if flags.keyfile_auto:
         steps.append("install_keyfile()/luksAddKey()")
     steps.append("ensure_packages()/rebuild()/verify_initramfs()")
+    # try:
+    #     image = os.path.join(mounts.mnt, 'boot', 'firmware', 'initramfs_2712')
+    #     if 'initramfs' in result:
+    #         result['initramfs']['resolved_image'] = image
+    #     included = verify_keyfile_in_image(image, 'etc/cryptsetup-keys.d/cryptroot.key')
+    #     if 'initramfs' in result:
+    #         result['initramfs']['keyfile_included'] = bool(included)
+    #     if not included:
+    #         _emit_result('FAIL_INITRAMFS_VERIFY', details={'image': image, 'expected': 'etc/cryptsetup-keys.d/cryptroot.key'})
+    # except Exception:
+    #     pass
     if flags.do_postcheck:
         steps.extend(
             [
@@ -410,18 +420,19 @@ def _plan_payload(
             "skip": flags.skip_rsync,
             "exclude_boot": True,
         },
-        "initramfs": {"image": "???"}, "postcheck": {
+        "initramfs": {"image": None},
+        "postcheck": {
             "requested": flags.do_postcheck,
             **({"offer": "--do-postcheck"} if not flags.do_postcheck else {}),
         },
         "safety_check": safety_snapshot,
         "timestamp": int(time.time()),
-        "key_unlock":
-            (
-                {"mode": "keyfile", "path": flags.keyfile_path}
-                if flags.keyfile_auto
-                else {"mode": "prompt", "path": None}
-            )}
+    }
+    payload["key_unlock"] = (
+        {"mode": "keyfile", "path": flags.keyfile_path}
+        if flags.keyfile_auto
+        else {"mode": "prompt", "path": None}
+    )
     return payload
 
 
@@ -1089,14 +1100,14 @@ def _main_impl(argv: Optional[list[str]] = None) -> int:  # pragma: no cover - e
                 extra={"path": flags.keyfile_path, "error": str(exc)},
             )
         assert_crypttab_uuid(mounts.mnt, luks_uuid)
-        # if flags.keyfile_auto:
-        #     try:
-        #         write_initramfs_conf(mounts.mnt)
-        #     except Exception as exc:  # noqa: BLE001
-        #         _emit_result(
-        #             "FAIL_INITRAMFS_VERIFY",
-        #             extra={"phase": "initramfs_conf", "error": str(exc)},
-        #         )
+        if flags.keyfile_auto:
+            try:
+                write_initramfs_conf(mounts.mnt)
+            except Exception as exc:  # noqa: BLE001
+                _emit_result(
+                    "FAIL_INITRAMFS_VERIFY",
+                    extra={"phase": "initramfs_conf", "error": str(exc)},
+                )
         root_mapper_path = dm.root_lv_path or f"/dev/mapper/{dm.vg}-{dm.lv}"
         write_cmdline(
             mounts.esp,
@@ -1226,7 +1237,6 @@ def _main_impl(argv: Optional[list[str]] = None) -> int:  # pragma: no cover - e
                     "snippet": exc.snippet,
                 },
             )
-
         try:
             packages_meta = ensure_packages(mounts.mnt)
         except Exception as exc:  # noqa: BLE001
@@ -1236,13 +1246,10 @@ def _main_impl(argv: Optional[list[str]] = None) -> int:  # pragma: no cover - e
             )
         try:
             rebuild_target = initramfs_image_path or mounts.mnt
-            # path, current, desired = write_initramfs_conf(mounts.mnt)
-            # ensure_cryptsetup_initramfs(mounts.mnt)
             rebuild_meta = rebuild(rebuild_target, force_prompt=not flags.keyfile_auto)
-            # append_jsonl(_result_log_path(), { "the_update" : {"path": path, "current" : current, "desired" :desired } } )
         except Exception as exc:  # noqa: BLE001
             _emit_result(
-                "WRITE_INITRAMFS_CONF_FAAAAAIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIILLLLLL",
+                "FAIL_INITRAMFS_VERIFY",
                 extra={"phase": "rebuild", "error": str(exc)},
             )
         if flags.keyfile_auto:
@@ -1270,36 +1277,36 @@ def _main_impl(argv: Optional[list[str]] = None) -> int:  # pragma: no cover - e
                 extra={"why": exc.why, "checks": exc.result},
             )
 
-        # if flags.remove_passphrase:
-        #     keyfile_in_initramfs = bool(initramfs_key_meta and initramfs_key_meta.get("included"))
-        #     prerequisites_ok = bool(
-        #         flags.keyfile_auto and keyfile_meta and keyfile_in_initramfs and key_unlock_verified
-        #     )
-        #     if not prerequisites_ok:
-        #         why = "keyfile prerequisites not met"
-        #         if not keyfile_meta:
-        #             why = "keyfile metadata missing"
-        #         elif not keyfile_in_initramfs:
-        #             why = "initramfs missing embedded keyfile"
-        #         elif not key_unlock_verified:
-        #             why = "keyfile unlock test failed"
-        #         _emit_result(
-        #             "FAIL_REMOVE_PASSPHRASE_BLOCKED",
-        #             extra={
-        #                 "why": why,
-        #                 "key_unlock_verified": key_unlock_verified,
-        #                 "initramfs_has_key": keyfile_in_initramfs,
-        #             },
-        #         )
-        #     try:
-        #         remove_passphrase_keyslot(dm.p3, passphrase_file)
-        #     except Exception as exc:  # noqa: BLE001
-        #         _emit_result(
-        #             "FAIL_SAFETY_GUARD",
-        #             extra={
-        #                 "why": "failed to remove LUKS passphrase", "error": str(exc)
-        #             },
-        #         )
+        if flags.remove_passphrase:
+            keyfile_in_initramfs = bool(initramfs_key_meta and initramfs_key_meta.get("included"))
+            prerequisites_ok = bool(
+                flags.keyfile_auto and keyfile_meta and keyfile_in_initramfs and key_unlock_verified
+            )
+            if not prerequisites_ok:
+                why = "keyfile prerequisites not met"
+                if not keyfile_meta:
+                    why = "keyfile metadata missing"
+                elif not keyfile_in_initramfs:
+                    why = "initramfs missing embedded keyfile"
+                elif not key_unlock_verified:
+                    why = "keyfile unlock test failed"
+                _emit_result(
+                    "FAIL_REMOVE_PASSPHRASE_BLOCKED",
+                    extra={
+                        "why": why,
+                        "key_unlock_verified": key_unlock_verified,
+                        "initramfs_has_key": keyfile_in_initramfs,
+                    },
+                )
+            try:
+                remove_passphrase_keyslot(dm.p3, passphrase_file)
+            except Exception as exc:  # noqa: BLE001
+                _emit_result(
+                    "FAIL_SAFETY_GUARD",
+                    extra={
+                        "why": "failed to remove LUKS passphrase", "error": str(exc)
+                    },
+                )
 
         postcheck_pruned = remove_postboot_artifacts(mounts.mnt)
 
@@ -1409,9 +1416,9 @@ def _main_impl(argv: Optional[list[str]] = None) -> int:  # pragma: no cover - e
         },
         "steps": planned_steps,
         "same_underlying_disk": same_disk,
-        "device": plan.device,
-        "keyfile": keyfile_meta
     }
+    result_payload["device"] = plan.device
+    result_payload["keyfile"] = keyfile_meta
     if key_rotation_meta:
         result_payload["key_rotation"] = key_rotation_meta
     if flags.keyfile_auto:
@@ -1423,7 +1430,9 @@ def _main_impl(argv: Optional[list[str]] = None) -> int:  # pragma: no cover - e
     )
     if not flags.do_postcheck:
         result_payload["postcheck"]["offer"] = "--do-postcheck"
-        result_payload.setdefault("timing", {})["total_ms"] = int(max(0.0, (time.perf_counter() - CLI_START_MONO) * 1000))
+    result_payload.setdefault("timing", {})["total_ms"] = int(
+        max(0.0, (time.perf_counter() - CLI_START_MONO) * 1000)
+    )
     artifact_path = _write_json_artifact("full", result_payload)
     result_payload["artifact"] = artifact_path
     preboot_payload = dict(result_payload)

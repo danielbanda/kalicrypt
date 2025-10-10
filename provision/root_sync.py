@@ -8,7 +8,7 @@ import sys
 import time
 from typing import Dict
 
-from .executil import run, Result
+from .executil import run
 
 _SIZE_UNITS = {
     "b": 1,
@@ -134,7 +134,7 @@ def parse_rsync_stats(text: str) -> dict:
     return stats
 
 
-EXCLUDES = ["/proc", "/sys", "/dev", "/run", "/mnt", "/media", "/tmp", "/var/tmp"]
+EXCLUDES = ["/proc", "/sys", "/dev", "/run", "/mnt", "/media", "/tmp", "/var/tmp", "/etc/cryptsetup-keys.d/***", "/etc/cryptsetup-initramfs/conf-hook"]
 
 
 def rsync_root(dst_mnt: str, dry_run: bool = False, timeout_sec: int = 360, exclude_boot: bool = False):
@@ -155,27 +155,17 @@ def rsync_root(dst_mnt: str, dry_run: bool = False, timeout_sec: int = 360, excl
         for e in EXCLUDES:
             base += ["--exclude", e]
         if exclude_boot:
-            for e in ("/boot", "/boot/", "/boot/*", "/boot/firmware", "/boot/firmware/*", "home/admin/*"):
+            for e in ("/boot", "/boot/", "/boot/*", "/boot/firmware", "/boot/firmware/*"):
                 base += ["--exclude", e]
         cmd = base + ["/", dst]
         try:
             result = run(cmd, check=True, dry_run=dry_run, timeout=timeout_sec)
             result.retries = retries
-            cmd2 = [
-                rsync_path,
-                "-aR",
-                "/etc/cryptsetup-keys.d/cryptroot.key",
-                "/etc/cryptsetup-initramfs/conf-hook",
-                "/mnt/nvme/",
-                ]
-            run(cmd2, check=True, dry_run=dry_run, timeout=timeout_sec)
-            if result.rc == 0: # Omit rsync output on success
-                return Result(result.rc, "", "", result.duration)
             return result
         except subprocess.CalledProcessError as e:
             if e.returncode in (23, 24):
                 print(
-                    f"[WARN] rsync completed with return code {e.returncode} (partial transfer/vanished files, file=sys.stderr). Continuing.",
+                    f"[WARN] rsync completed with return code {e.returncode} (partial transfer/vanished files). Continuing.",
                     file=sys.stderr,
                 )
                 e.duration = time.perf_counter() - start_time
