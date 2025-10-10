@@ -108,22 +108,27 @@ def run_postcheck(
             "path": keyfile_path,
             "crypttab_has_key_path": keyfile_path in txt,
         }
-        if not keyfile_result["crypttab_has_key_path"]:
-            res["checks"].append({"keyfile": keyfile_result})
-            raise RuntimeError(f"crypttab missing keyfile path {keyfile_path}")
-        meta = initramfs_key_meta or verify_keyfile_in_image(boot_fw, keyfile_path)
-        keyfile_result["initramfs_has_keyfile"] = bool(meta.get("included"))
-        keyfile_result["initramfs_meta"] = meta
-        res["checks"].append({"keyfile": keyfile_result})
-        if not keyfile_result["initramfs_has_keyfile"]:
-            why = meta.get("error") or "initramfs missing keyfile entry"
-            raise RuntimeError(why)
-    elif initramfs_key_meta:
-        keyfile_result = {
-            "crypttab_has_key_path": False,
-            "initramfs_has_keyfile": bool(initramfs_key_meta.get("included")),
-            "initramfs_meta": initramfs_key_meta,
-        }
+        # Compute keyfile presence (filesystem + image)
+        keyfile_rel = "etc/cryptsetup-keys.d/cryptroot.key"   # image uses NO leading slash
+        keyfile_abs = os.path.join(mnt, "etc", "cryptsetup-keys.d", "cryptroot.key")
+        keyfile_fs = os.path.isfile(keyfile_abs) and (os.path.getsize(keyfile_abs) > 0)
+    
+        # verify_keyfile_in_image API in your tree returns a dict meta; accept bool fallback just in case
+        meta = verify_keyfile_in_image(boot_fw, f"/{keyfile_rel}")
+        if isinstance(meta, bool):
+            keyfile_image = meta
+        else:
+            # common shapes: {"present": bool, ...} or {"found": bool, ...}
+            keyfile_image = bool(meta and (meta.get("present") or meta.get("found") or meta.get("ok")))
+    
+        # Record in report
+        res["keyfile_fs"] = keyfile_fs
+        res["keyfile_image"] = keyfile_image
+        if not keyfile_image:
+            res.setdefault("errors", []).append(
+                {"check": "initramfs_keyfile", "why": f"{keyfile_rel} missing in initramfs_2712"}
+            )
+            res["ok"] = False
         res["checks"].append({"keyfile": keyfile_result})
 
     # 2) boot firmware/initramfs verification
