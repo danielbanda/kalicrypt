@@ -145,3 +145,13 @@ def run_postcheck(
 
 
 POSTCHECK_OK = "POSTCHECK_OK"
+
+
+def _pc_verify_keyfile_in_image(image, rel='etc/cryptsetup-keys.d/cryptroot.key'):
+    try:
+        import subprocess
+        out = subprocess.check_output(['lsinitramfs', image], text=True)
+        rel = rel.lstrip('/')
+        return any(line.strip()==rel for line in out.splitlines())
+    except Exception:
+        return False
