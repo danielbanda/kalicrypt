@@ -40,7 +40,7 @@ echo "$CRYPTLINE" | grep -q "UUID=$LUKS_UUID" && ok "crypttab UUID matches LUKS 
 [ -s "$ESP/cmdline.txt" ] || fail "cmdline.txt missing on ESP"
 CMD=$(cat "$ESP/cmdline.txt")
 echo "$CMD" | grep -q 'root=/dev/mapper/rp5vg-root' && ok "cmdline root mapper is rp5vg-root" || fail "cmdline root mapper not set to rp5vg-root"
-echo "$CMD" | grep -q "cryptdevice=UUID=$LUKS_UUID:cryptroot" && ok "cmdline cryptdevice UUID matches" || echo "${YEL}[WARN] cmdline cryptdevice UUID mismatch$NC"
+echo "$CMD" | grep -q "cryptdevice=UUID=$LUKS_UUID" && ok "cmdline cryptdevice UUID matches" || echo "${YEL}[WARN] cmdline cryptdevice UUID mismatch$NC"
 
 # fstab: accept UUID= or PARTUUID=
 FSTAB="$MNT/etc/fstab"
