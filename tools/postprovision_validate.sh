@@ -42,11 +42,22 @@ CMD=$(cat "$ESP/cmdline.txt")
 echo "$CMD" | grep -q 'root=/dev/mapper/rp5vg-root' && ok "cmdline root mapper is rp5vg-root" || fail "cmdline root mapper not set to rp5vg-root"
 echo "$CMD" | grep -q "cryptdevice=UUID=$LUKS_UUID" && ok "cmdline cryptdevice UUID matches" || echo "${YEL}[WARN] cmdline cryptdevice UUID mismatch$NC"
 
-# fstab: accept UUID= or PARTUUID=
+# fstab: ONLY UUID= accepted
 FSTAB="$MNT/etc/fstab"
-FSTAB=$(cat "$MNT/etc/fstab")
-echo "$FSTAB" | grep -q "((UUID=$P2_UUID)|(PARTUUID=$P2_PUUID)).*[[:space:]]/boot[[:space:]]" "$FSTAB" && ok "fstab has /boot (UUID or PARTUUID)" || fail "fstab lacks P2 for /boot"
-echo "$FSTAB" | grep -q "((UUID=$P1_UUID)|(PARTUUID=$P1_PUUID)).*[[:space:]]/boot/firmware[[:space:]]" "$FSTAB" && ok "fstab has /boot/firmware (UUID or PARTUUID)" || fail "fstab lacks P1 for /boot/firmware"
+[ -s "$FSTAB" ] || fail "fstab missing"
+
+boot_ok=$(awk -v u="$P2_UUID" '
+  $0 !~ /^[[:space:]]*#/ && NF >= 2 {
+    if ($2 == "/boot" && $1 == "UUID=" u) { print "yes"; exit 0 }
+  }' "$FSTAB")
+
+firmware_ok=$(awk -v u="$P1_UUID" '
+  $0 !~ /^[[:space:]]*#/ && NF >= 2 {
+    if ($2 == "/boot/firmware" && $1 == "UUID=" u) { print "yes"; exit 0 }
+  }' "$FSTAB")
+
+[ "${boot_ok:-}" = "yes" ] && ok "fstab has /boot (UUID only)" || fail "fstab lacks UUID for /boot"
+[ "${firmware_ok:-}" = "yes" ] && ok "fstab has /boot/firmware (UUID only)" || fail "fstab lacks UUID for /boot/firmware"
 
 # ESP firmware presence
 need_ok=true
