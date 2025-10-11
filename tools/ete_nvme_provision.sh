@@ -59,6 +59,7 @@ mkfs.ext4 -F -L root "/dev/mapper/${VG_NAME}-${LV_NAME}"
 
 echo "${BLU}[STEP] Mount target${NC}"
 mkdir -p "$MNT"
+#mountpoint -q "$MNT/dev" || mount --bind /dev "$MNT/dev"
 mount "/dev/mapper/${VG_NAME}-${LV_NAME}" "$MNT"
 mkdir -p "$MNT/boot"
 mount "$P2" "$MNT/boot"
@@ -90,19 +91,21 @@ rsync -aHAX "/lib/modules/$KVER"  "$MNT/lib/modules/"
 rsync -aHAX /lib/firmware/        "$MNT/lib/firmware/"
 
 echo "${BLU}[STEP] Write fstab, crypttab, cmdline (stable IDs)${NC}"
-
+#cryptsetup luksDump "$P3" | grep -q "$LUKS_UUID" || echo "${YEL}[WARN] LUKS UUID mismatch${NC}"
 # Resolve stable IDs once (after mkfs/cryptsetup)
-P1_PARTUUID=$(blkid -s PARTUUID -o value "$P1")
-P2_PARTUUID=$(blkid -s PARTUUID -o value "$P2")
+P1_UUID=$(blkid -s UUID -o value "$P1");
+P2_UUID=$(blkid -s UUID -o value "$P2");
 LUKS_UUID=$(blkid -s UUID -o value "$P3")
 ROOT_MAPPER="/dev/mapper/${VG_NAME}-${LV_NAME}"
+
+#[ -b "$ROOT_MAPPER" ] || { echo "${RED}[FAIL] Missing root mapper device: $ROOT_MAPPER${NC}"; exit 1; }
 
 # 1) fstab — use PARTUUID for /boot and /boot/firmware; mapper for /
 #    vfat ESP with strict umask; ext4 defaults for / and /boot
 tee "$MNT/etc/fstab" >/dev/null <<EOF
 /dev/mapper/${VG_NAME}-${LV_NAME}  /               ext4  defaults,errors=remount-ro  0 1
-PARTUUID=$P2_PARTUUID              /boot           ext4  defaults                     0 2
-PARTUUID=$P1_PARTUUID              /boot/firmware  vfat  umask=0077                   0 2
+UUID=$P2_UUID                      /boot           ext4  defaults                     0 2
+UUID=$P1_UUID                      /boot/firmware  vfat  umask=0077                   0 2
 EOF
 
 install -d -m 0755 "$MNT/etc/cryptsetup-keys.d"
@@ -111,10 +114,6 @@ install -d -m 0755 "$MNT/etc/cryptsetup-initramfs"
 printf 'KEYFILE_PATTERN=/etc/cryptsetup-keys.d/*.key\nUMASK=0077\n' | tee "$MNT/etc/cryptsetup-initramfs/conf-hook" >/dev/null
 chmod 0644 "$MNT/etc/cryptsetup-initramfs/conf-hook"
 printf 'cryptroot  UUID=%s  /etc/cryptsetup-keys.d/cryptroot.key  luks,discard,initramfs\n' "$LUKS_UUID" | tee "$MNT/etc/crypttab" >/dev/null
-
-#tee "$MNT/boot/firmware/cmdline.txt" >/dev/null <<EOF
-#cryptdevice=UUID=$LUKS_UUID:cryptroot root=$ROOT_MAPPER rootfstype=ext4 rootwait
-#EOF
 
 # ------------------------ FIRMWARE TO ESP ------------------------
 echo "${BLU}[STEP] Populate ESP with firmware (DTBs/overlays/elf)${NC}"
@@ -126,6 +125,7 @@ elif [ -d "/boot/firmware" ] && [ -f "/boot/firmware/start4.elf" ]; then
   SRC_FW="/boot/firmware/"
 fi
 
+# ------------------------ SYNC FIRMWARE FILES (-cmdline.txt) ------------------------
 if [ -n "$SRC_FW" ]; then
   rsync -aH --delete --info=stats2 --exclude "cmdline.txt" "$SRC_FW" "$MNT/boot/firmware/"
 else
