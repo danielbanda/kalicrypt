@@ -77,20 +77,23 @@ fi
 # 6) initramfs presence & contents
 cfg="${ESP}/config.txt"
 if [ -s "$cfg" ]; then
-  line="$(grep -E '^initramfs\\s+\\S+\\s+followkernel' "$cfg" || true)"
-  img="$(echo "$line" | awk '{print $2}')"
-  [ -n "$img" ] || fail "config.txt missing initramfs line"
+  # Match: optional leading spaces, "initramfs", <image>, "followkernel"
+  img="$(awk '/^[[:space:]]*initramfs[[:space:]]+[[:graph:]]+[[:space:]]+followkernel([[:space:]]|$)/ { im=$2 } END{ if(im!="") print im }' "$cfg")"
+  [ -n "$img" ] || fail "config.txt missing initramfs line (expected: initramfs <image> followkernel)"
   [ -s "${ESP}/${img}" ] || fail "initramfs image missing: ${ESP}/${img}"
+
   if command -v lsinitramfs >/dev/null 2>&1; then
-    out="$(lsinitramfs "${ESP}/${img}" | awk 'NR<1e6{print}')" || true
-    echo "$out" | grep -q '/sbin/cryptsetup' && ok "initramfs contains cryptsetup" || fail "initramfs missing cryptsetup"
-    echo "$out" | grep -q '/sbin/lvm' && ok "initramfs contains lvm" || fail "initramfs missing lvm"
+    # lsinitramfs prints paths without a leading slash (e.g., sbin/cryptsetup)
+    out="$(lsinitramfs "${ESP}/${img}" || true)"
+    printf '%s\n' "$out" | grep -Eq '(^|/)cryptsetup(\.static)?$' && ok "initramfs contains cryptsetup" || fail "initramfs missing cryptsetup"
+    printf '%s\n' "$out" | grep -Eq '(^|/)lvm(\.static)?$'        && ok "initramfs contains lvm"        || fail "initramfs missing lvm"
   else
     warn "lsinitramfs not found; skipping image contents check"
   fi
 else
   fail "config.txt missing"
 fi
+
 
 # 7) Recovery doc & postboot check
 [ -x "${MNT}/usr/local/sbin/rp5-postboot-check" ] && ok "postboot-check installed" || warn "postboot-check not found"
