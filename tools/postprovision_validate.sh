@@ -44,15 +44,9 @@ echo "$CMD" | grep -q "cryptdevice=UUID=$LUKS_UUID:cryptroot" && ok "cmdline cry
 
 # fstab: accept UUID= or PARTUUID=
 FSTAB="$MNT/etc/fstab"
-[ -s "$FSTAB" ] || fail "fstab missing"
-
-boot_ok=false
-firmware_ok=false
-grep -Eq "((UUID=$P2_UUID)|(PARTUUID=$P2_PUUID)).*[[:space:]]/boot[[:space:]]" "$FSTAB" && boot_ok=true
-grep -Eq "((UUID=$P1_UUID)|(PARTUUID=$P1_PUUID)).*[[:space:]]/boot/firmware[[:space:]]" "$FSTAB" && firmware_ok=true
-
-\$boot_ok && ok "fstab has /boot (UUID or PARTUUID)" || fail "fstab lacks P2 for /boot"
-\$firmware_ok && ok "fstab has /boot/firmware (UUID or PARTUUID)" || fail "fstab lacks P1 for /boot/firmware"
+FSTAB=$(cat "$MNT/etc/fstab")
+grep -Eq "((UUID=$P2_UUID)|(PARTUUID=$P2_PUUID)).*[[:space:]]/boot[[:space:]]" "$FSTAB" && ok "fstab has /boot (UUID or PARTUUID)" || fail "fstab lacks P2 for /boot"
+grep -Eq "((UUID=$P1_UUID)|(PARTUUID=$P1_PUUID)).*[[:space:]]/boot/firmware[[:space:]]" "$FSTAB" && ok "fstab has /boot/firmware (UUID or PARTUUID)" || fail "fstab lacks P1 for /boot/firmware"
 
 # ESP firmware presence
 need_ok=true
