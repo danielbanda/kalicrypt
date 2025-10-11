@@ -112,9 +112,9 @@ printf 'KEYFILE_PATTERN=/etc/cryptsetup-keys.d/*.key\nUMASK=0077\n' | tee "$MNT/
 chmod 0644 "$MNT/etc/cryptsetup-initramfs/conf-hook"
 printf 'cryptroot  UUID=%s  /etc/cryptsetup-keys.d/cryptroot.key  luks,discard,initramfs\n' "$LUKS_UUID" | tee "$MNT/etc/crypttab" >/dev/null
 
-tee "$MNT/boot/firmware/cmdline.txt" >/dev/null <<EOF
-cryptdevice=UUID=$LUKS_UUID:cryptroot root=$ROOT_MAPPER rootfstype=ext4 rootwait
-EOF
+#tee "$MNT/boot/firmware/cmdline.txt" >/dev/null <<EOF
+#cryptdevice=UUID=$LUKS_UUID:cryptroot root=$ROOT_MAPPER rootfstype=ext4 rootwait
+#EOF
 
 # ------------------------ FIRMWARE TO ESP ------------------------
 echo "$BLU[STEP] Populate ESP with firmware (DTBs/overlays/elf)$NC"
@@ -138,6 +138,10 @@ grep -qi '^\s*\[all\]\s*$' "$CFG" || printf '\n[all]\n' >>"$CFG"
 grep -qi '^\s*initramfs\s\+\S\+\s\+followkernel\s*$' "$CFG" || printf 'initramfs %s followkernel\n' "$IMAGE_NAME" >>"$CFG"
 # Bypass OS gate for non-RPiOS/older images
 if ! grep -qi '^\s*os_check=' "$CFG"; then echo "os_check=$OS_CHECK" >> "$CFG"; else sed -i "s/^os_check=.*/os_check=$OS_CHECK/" "$CFG"; fi
+
+tee "$MNT/boot/firmware/cmdline.txt" >/dev/null <<EOF
+cryptdevice=UUID=$LUKS_UUID:cryptroot root=$ROOT_MAPPER rootfstype=ext4 rootwait
+EOF
 
 echo "$BLU[STEP] Rebuild initramfs inside chroot$NC"
 chroot "$MNT" /usr/sbin/update-initramfs -c -k "$KVER" || { echo "$YEL[WARN] update-initramfs failed; continuing$NC"; true; }
