@@ -28,6 +28,8 @@ LUKS_UUID=$(blkid -s UUID -o value "$P3_DEV" 2>/dev/null || true)
 
 [ -n "$P1_UUID" ] && ok "P1 UUID: $P1_UUID" || fail "P1 UUID missing"
 [ -n "$P2_UUID" ] && ok "P2 UUID: $P2_UUID" || fail "P2 UUID missing"
+[ -n "$P1_PUUID" ] && ok "P1 PARTUUID: $P1_PUUID" || fail "P1 PARTUUID missing"
+[ -n "$P2_PUUID" ] && ok "P2 PARTUUID: $P2_PUUID" || fail "P2 PARTUUID missing"
 
 # crypttab
 CRYPTLINE=$(grep -E '^[[:space:]]*cryptroot[[:space:]]+' "$MNT/etc/crypttab" || true)
