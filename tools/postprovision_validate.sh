@@ -33,17 +33,17 @@ if ! findmnt -no SOURCE,TARGET "${MNT}" >/dev/null 2>&1 || [ -z "$(findmnt -no S
     KEYFILE="$AUTOKEY" bash "$HOME/rp5/tools/mount_target_root.sh" "${MNT}" || true
   fi
   if findmnt -no SOURCE "${MNT}" >/dev/null 2>&1; then
-    echo "[OK] Auto-mount succeeded: $(findmnt -no SOURCE,TARGET ${MNT})"
+    echo "[OK] Auto-mount succeeded: $(findmnt -no SOURCE,TARGET "${MNT}")"
   else
     echo "Hint: open and mount the target root, then re-run:"
-    echo "  cryptsetup open UUID=$(blkid -s UUID -o value ${P3}) cryptroot --key-file ~/secret.txt --allow-discards"
+    echo "  cryptsetup open UUID=$(blkid -s UUID -o value "${P3}") cryptroot --key-file ~/secret.txt --allow-discards"
     echo "  vgchange -ay rp5vg; mount /dev/mapper/rp5vg-root ${MNT}"
     echo "OR just run: sudo bash ~/rp5/tools/mount_target_root.sh ${MNT}"
     exit 2
   fi
 fi
-# ============================
-=== MOUNTPOINT CHECK =====
+
+# === MOUNTPOINT CHECK =====
 if ! findmnt -no SOURCE,TARGET "${MNT}" >/dev/null 2>&1 || [ -z "$(findmnt -no SOURCE "${MNT}" 2>/dev/null)" ]; then
   echo "[FAIL] ${MNT} is not a mountpoint (target root not mounted)."
     echo "Attempting auto-mount (using ~/rp5/tools/mount_target_root.sh)..." 
@@ -52,10 +52,10 @@ if ! findmnt -no SOURCE,TARGET "${MNT}" >/dev/null 2>&1 || [ -z "$(findmnt -no S
     KEYFILE="$AUTOKEY" bash "$HOME/rp5/tools/mount_target_root.sh" "${MNT}" || true
   fi
   if findmnt -no SOURCE "${MNT}" >/dev/null 2>&1; then
-    echo "[OK] Auto-mount succeeded: $(findmnt -no SOURCE,TARGET ${MNT})"
+    echo "[OK] Auto-mount succeeded: $(findmnt -no SOURCE,TARGET "${MNT}")"
   else
     echo "Hint: open and mount the target root, then re-run:"
-    echo "  cryptsetup open UUID=$(blkid -s UUID -o value ${P3}) cryptroot --key-file ~/secret.txt --allow-discards"
+    echo "  cryptsetup open UUID=$(blkid -s UUID -o value "${P3}") cryptroot --key-file ~/secret.txt --allow-discards"
     echo "  vgchange -ay rp5vg; mount /dev/mapper/rp5vg-root ${MNT}"
     echo "OR just run: sudo bash ~/rp5/tools/mount_target_root.sh ${MNT}"
     exit 2

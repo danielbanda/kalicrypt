@@ -15,13 +15,13 @@ IMAGE_NAME="${IMAGE_NAME:-initramfs_2712}"
 SKIP_RSYNC="${SKIP_RSYNC:-false}"
 OS_CHECK="${OS_CHECK:-0}"
 
-echo "$BLU[STEP] Inputs$NC DEVICE=$DEVICE KEY_SRC=$KEY_SRC ESP_MB=$ESP_MB BOOT_MB=$BOOT_MB VG=$VG_NAME LV=$LV_NAME OS_CHECK=$OS_CHECK"
+echo "${BLU}[STEP] Inputs${NC} DEVICE=$DEVICE KEY_SRC=$KEY_SRC ESP_MB=$ESP_MB BOOT_MB=$BOOT_MB VG=$VG_NAME LV=$LV_NAME OS_CHECK=$OS_CHECK"
 
-if [ "$(id -u)" != "0" ]; then echo "$RED[FAIL] must run as root$NC"; exit 1; fi
-if [ ! -f "$KEY_SRC" ] || [ ! -s "$KEY_SRC" ]; then echo "$RED[FAIL] missing or empty KEY_SRC:$NC $KEY_SRC"; exit 1; fi
-if [ ! -b "$DEVICE" ]; then echo "$RED[FAIL] not a block device:$NC $DEVICE"; exit 1; fi
+if [ "$(id -u)" != "0" ]; then echo "${RED}[FAIL] must run as root${NC}"; exit 1; fi
+if [ ! -f "$KEY_SRC" ] || [ ! -s "$KEY_SRC" ]; then echo "${RED}[FAIL] missing or empty KEY_SRC:${NC} $KEY_SRC"; exit 1; fi
+if [ ! -b "$DEVICE" ]; then echo "${RED}[FAIL] not a block device:${NC} $DEVICE"; exit 1; fi
 
-echo "$BLU[STEP] Kill holders and unmount if needed$NC"
+echo "${BLU}[STEP] Kill holders and unmount if needed${NC}"
 swapoff -a || true
 sync || true
 for d in "$MNT/tmp" "$MNT/var/tmp" "$MNT/proc" "$MNT/sys" "$MNT/dev" "$MNT/run" "$MNT/boot/firmware" "$MNT/boot" "$MNT"; do
@@ -31,7 +31,7 @@ dmsetup remove --retry "$LUKS_NAME" 2>/dev/null || true
 vgchange -an "$VG_NAME" 2>/dev/null || true
 cryptsetup close "$LUKS_NAME" 2>/dev/null || true
 
-echo "$BLU[STEP] Partition disk (GPT: p1=EFI $ESP_MB MiB, p2=boot $BOOT_MB MiB, p3=LUKS)$NC"
+echo "${BLU}[STEP] Partition disk (GPT: p1=EFI $ESP_MB MiB, p2=boot $BOOT_MB MiB, p3=LUKS)${NC}"
 sgdisk -Z "$DEVICE"
 sgdisk -n 1:0:+"${ESP_MB}"M -t 1:ef00 "$DEVICE"
 sgdisk -n 2:0:+"${BOOT_MB}"M -t 2:8300 "$DEVICE"
@@ -43,21 +43,21 @@ HD=$(command -v hdparm || true); [ -n "$HD" ] && hdparm -z "$DEVICE" || true
 
 P1="${DEVICE}p1"; P2="${DEVICE}p2"; P3="${DEVICE}p3"
 
-echo "$BLU[STEP] Create LUKS2 + LVM$NC"
-echo "$YEL[WARN] Proceeding will format $P3$NC"
+echo "${BLU}[STEP] Create LUKS2 + LVM${NC}"
+echo "${YEL}[WARN] Proceeding will format $P3${NC}"
 cryptsetup luksFormat "$P3" "$KEY_SRC" --type luks2 --pbkdf pbkdf2 --batch-mode
 cryptsetup -q open "$P3" "$LUKS_NAME" --key-file "$KEY_SRC" --allow-discards
 pvcreate -ff -y "/dev/mapper/$LUKS_NAME"
 vgcreate "$VG_NAME" "/dev/mapper/$LUKS_NAME"
 lvcreate -n "$LV_NAME" -l 100%FREE "$VG_NAME"
 
-echo "$BLU[STEP] Make filesystems$NC"
+echo "${BLU}[STEP] Make filesystems${NC}"
 mkfs.vfat -F 32 -n EFI "$P1"
 wipefs -a "$P2" 2>/dev/null || true
 mkfs.ext4 -F -L boot "$P2"
 mkfs.ext4 -F -L root "/dev/mapper/${VG_NAME}-${LV_NAME}"
 
-echo "$BLU[STEP] Mount target$NC"
+echo "${BLU}[STEP] Mount target${NC}"
 mkdir -p "$MNT"
 mount "/dev/mapper/${VG_NAME}-${LV_NAME}" "$MNT"
 mkdir -p "$MNT/boot"
@@ -75,7 +75,7 @@ chmod 1777 "$MNT/tmp" "$MNT/var/tmp" || true
 
 # ------------------------ ROOT RSYNC ------------------------
 if [ "$SKIP_RSYNC" != "true" ]; then
-  echo "$BLU[STEP] Rsync root with excludes$NC"
+  echo "${BLU}[STEP] Rsync root with excludes${NC}"
   rsync -aHAX --numeric-ids --delete-after --info=progress2 --stats \
     --exclude '/proc' --exclude '/sys' --exclude '/dev' --exclude '/run' \
     --exclude '/mnt' --exclude '/media' --exclude '/tmp' --exclude '/var/tmp' \
@@ -89,7 +89,7 @@ KVER=$(uname -r)
 rsync -aHAX "/lib/modules/$KVER"  "$MNT/lib/modules/"
 rsync -aHAX /lib/firmware/        "$MNT/lib/firmware/"
 
-echo "$BLU[STEP] Write fstab, crypttab, cmdline (stable IDs)$NC"
+echo "${BLU}[STEP] Write fstab, crypttab, cmdline (stable IDs)${NC}"
 
 # Resolve stable IDs once (after mkfs/cryptsetup)
 P1_PARTUUID=$(blkid -s PARTUUID -o value "$P1")
@@ -117,7 +117,7 @@ printf 'cryptroot  UUID=%s  /etc/cryptsetup-keys.d/cryptroot.key  luks,discard,i
 #EOF
 
 # ------------------------ FIRMWARE TO ESP ------------------------
-echo "$BLU[STEP] Populate ESP with firmware (DTBs/overlays/elf)$NC"
+echo "${BLU}[STEP] Populate ESP with firmware (DTBs/overlays/elf)${NC}"
 # Prefer in-target firmware if present, else host /boot/firmware
 SRC_FW=""
 if [ -d "$MNT/boot/firmware" ] && [ -f "$MNT/boot/firmware/start4.elf" ]; then
@@ -127,9 +127,9 @@ elif [ -d "/boot/firmware" ] && [ -f "/boot/firmware/start4.elf" ]; then
 fi
 
 if [ -n "$SRC_FW" ]; then
-  rsync -aH --delete --info=stats2 "$SRC_FW" "$MNT/boot/firmware/"
+  rsync -aH --delete --info=stats2 --exclude "cmdline.txt" "$SRC_FW" "$MNT/boot/firmware/"
 else
-  echo "$YEL[WARN] No firmware source found; will rely on kernel package in chroot$NC"
+  echo "${YEL}[WARN] No firmware source found; will rely on kernel package in chroot${NC}"
 fi
 
 CFG="$MNT/boot/firmware/config.txt"
@@ -139,29 +139,32 @@ grep -qi '^\s*initramfs\s\+\S\+\s\+followkernel\s*$' "$CFG" || printf 'initramfs
 # Bypass OS gate for non-RPiOS/older images
 if ! grep -qi '^\s*os_check=' "$CFG"; then echo "os_check=$OS_CHECK" >> "$CFG"; else sed -i "s/^os_check=.*/os_check=$OS_CHECK/" "$CFG"; fi
 
-tee "$MNT/boot/firmware/cmdline.txt" >/dev/null <<EOF
-cryptdevice=UUID=$LUKS_UUID:cryptroot root=$ROOT_MAPPER rootfstype=ext4 rootwait
-EOF
-
-echo "$BLU[STEP] Rebuild initramfs inside chroot$NC"
-chroot "$MNT" /usr/sbin/update-initramfs -c -k "$KVER" || { echo "$YEL[WARN] update-initramfs failed; continuing$NC"; true; }
+# ------------------------ INITRAMFS BUILD ------------------------
+echo "${BLU}[STEP] Rebuild initramfs inside chroot${NC}"
+chroot "$MNT" /usr/sbin/update-initramfs -c -k "$KVER" || { echo "${YEL}[WARN] update-initramfs failed; continuing${NC}"; true; }
 # copy the built image to ESP
 if [ -f "$MNT/boot/initrd.img-$KVER" ]; then
   cp -f "$MNT/boot/initrd.img-$KVER" "$MNT/boot/firmware/$IMAGE_NAME"
 fi
 
+# ------------------------ ENSURE CMDLINE (post-firmware sync) ------------------------
+echo "${BLU}[STEP] Ensure cmdline points to LUKS mapper (post-firmware sync)${NC}"
+tee "$MNT/boot/firmware/cmdline.txt" >/dev/null <<EOF
+cryptdevice=UUID=$LUKS_UUID:cryptroot root=$ROOT_MAPPER rootfstype=ext4 rootwait console=serial0,115200 console=tty1 fsck.repair=yes net.ifnames=0
+EOF
+
 # ------------------------ VERIFY FIRMWARE ------------------------
-echo "$BLU[STEP] Verify firmware on ESP$NC"
+echo "${BLU}[STEP] Verify firmware on ESP${NC}"
 REQ_OK=true
 for f in start4.elf fixup4.dat overlays bcm2712-rpi-5-b.dtb "$IMAGE_NAME"; do
   if [ ! -e "$MNT/boot/firmware/$f" ]; then
-    echo "$RED[FAIL] Missing on ESP: $f$NC"; REQ_OK=false
+    echo "${RED}[FAIL] Missing on ESP: $f${NC}"; REQ_OK=false
   fi
 done
-$REQ_OK || { echo "$RED[RESULT] FAIL_ESP_FIRMWARE_INCOMPLETE$NC"; exit 2; }
+$REQ_OK || { echo "${RED}[RESULT] FAIL_ESP_FIRMWARE_INCOMPLETE${NC}"; exit 2; }
 
 # ------------------------ CLEANUP ------------------------
-echo "$BLU[STEP] Cleanup mounts$NC"
+echo "${BLU}[STEP] Cleanup mounts${NC}"
 sync || true
 for d in "$MNT/tmp" "$MNT/var/tmp" "$MNT/proc" "$MNT/sys" "$MNT/dev" "$MNT/run" "$MNT/boot/firmware" "$MNT/boot" "$MNT"; do
   umount -l "$d" 2>/dev/null || true
@@ -169,5 +172,5 @@ done
 vgchange -an "$VG_NAME" 2>/dev/null || true
 cryptsetup close "$LUKS_NAME" 2>/dev/null || true
 
-echo "$GRN[RESULT] ETE_DONE_OK$NC"
+echo "${GRN}[RESULT] ETE_DONE_OK${NC}"
 exit 0
