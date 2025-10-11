@@ -62,10 +62,17 @@ firmware_ok=$(awk -v u="$P1_UUID" '
 # ESP firmware presence
 need_ok=true
 for f in start4.elf fixup4.dat bcm2712-rpi-5-b.dtb; do
-  echo "Checking for $f on ESP '$ESP/$f'"
-  [ -e "$ESP/$f" ] || { printf "%s[FAIL]%s Missing on ESP: %s\n" "$RED" "$NC" "$f"; need_ok=false; }
+  if [ ! -e "$ESP/$f" ]; then
+    printf "%s[FAIL]%s Missing on ESP: %s\n" "$RED" "$NC" "$f"
+    need_ok=false
+  fi
 done
-\$need_ok && ok "ESP has core firmware + DTB" || fail "ESP firmware incomplete"
+
+if [ "$need_ok" = true ]; then
+  ok "ESP has core firmware + DTB"
+else
+  fail "ESP firmware incomplete"
+fi
 
 # 6) initramfs presence & contents
 cfg="${ESP}/config.txt"
