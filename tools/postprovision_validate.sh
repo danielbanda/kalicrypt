@@ -2,6 +2,7 @@
 set -eu
 RED=$(printf '\033[31m'); GRN=$(printf '\033[32m'); YEL=$(printf '\033[33m'); NC=$(printf '\033[0m')
 ok(){ printf "%s[OK]%s %s\n" "$GRN" "$NC" "$*"; }
+warn(){ printf "%s[FAIL]%s %s\n" "$YEL" "$NC" "$*"; }
 fail(){ printf "%s[FAIL]%s %s\n" "$RED" "$NC" "$*"; exit 1; }
 
 MNT="${1:-/mnt/nvme}"
