@@ -26,6 +26,11 @@ P1_PUUID=$(blkid -s PARTUUID -o value "$P1_DEV" 2>/dev/null || true)
 P2_PUUID=$(blkid -s PARTUUID -o value "$P2_DEV" 2>/dev/null || true)
 P3_DEV="/dev/${DISK}p3"
 LUKS_UUID=$(blkid -s UUID -o value "$P3_DEV" 2>/dev/null || true)
+NVME_DEV="${NVME_DEV:-/dev/nvme0n1}"
+P1="${P1:-${NVME_DEV}p1}"
+P2="${P2:-${NVME_DEV}p2}"
+P3="${P3:-${NVME_DEV}p3}"
+
 
 [ -n "$P1_UUID" ] && ok "P1 UUID: $P1_UUID" || fail "P1 UUID missing"
 [ -n "$P2_UUID" ] && ok "P2 UUID: $P2_UUID" || fail "P2 UUID missing"
