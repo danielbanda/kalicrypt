@@ -1,4 +1,5 @@
 using System.Runtime.InteropServices;
+using BlossomV.Core;
 
 namespace BlossomV;
 
@@ -254,5 +255,38 @@ public static class BlossomVSolver
         }
 
         return mwpmResult;
+    }
+
+    /// <summary>
+    /// Managed implementation using BlossomV.Core (does not require native library)
+    /// This is a pure C# implementation that can be used as a fallback
+    /// </summary>
+    public static List<uint> ManagedMinimumWeightPerfectMatching(uint nodeNum, List<(uint, uint, uint)> weightedEdges)
+    {
+        // Convert to format expected by managed implementation
+        var edges = weightedEdges.Select(e => ((int)e.Item1, (int)e.Item2, (int)e.Item3)).ToList();
+
+        // Use managed implementation
+        var matching = ManagedPerfectMatching.SolveMinimumWeightPerfectMatching((int)nodeNum, edges);
+
+        // Convert back to uint
+        return matching.Select(m => (uint)m).ToList();
+    }
+
+    /// <summary>
+    /// Safe wrapper that tries native implementation first, falls back to managed if unavailable
+    /// </summary>
+    public static List<uint> SafeMinimumWeightPerfectMatchingWithFallback(uint nodeNum, List<(uint, uint, uint)> weightedEdges)
+    {
+        try
+        {
+            // Try native implementation first
+            return SafeMinimumWeightPerfectMatching(nodeNum, weightedEdges);
+        }
+        catch (DllNotFoundException)
+        {
+            // Fall back to managed implementation
+            return ManagedMinimumWeightPerfectMatching(nodeNum, weightedEdges);
+        }
     }
 }
