@@ -6,7 +6,7 @@ namespace BlossomV;
 /// Simple priority queue implementation for Dijkstra's algorithm
 /// Using SortedDictionary for simplicity (not the most efficient, but works)
 /// </summary>
-public class PriorityQueue<TKey, TPriority> where TPriority : IComparable<TPriority>
+public class PriorityQueue<TKey, TPriority> where TPriority : IComparable<TPriority> where TKey : notnull
 {
     private readonly SortedSet<(TPriority Priority, TKey Key)> _heap;
     private readonly Dictionary<TKey, TPriority> _priorities;
@@ -48,9 +48,15 @@ public class PriorityQueue<TKey, TPriority> where TPriority : IComparable<TPrior
         return (min.Key, min.Priority);
     }
 
-    public TPriority? GetPriority(TKey key) => _priorities.TryGetValue(key, out var priority) ? priority : default;
+    public TPriority? GetPriority(TKey key)
+    {
+        return _priorities.GetValueOrDefault(key);
+    }
 
-    public bool ContainsKey(TKey key) => _priorities.ContainsKey(key);
+    public bool ContainsKey(TKey key)
+    {
+        return _priorities.ContainsKey(key);
+    }
 
     public void ChangePriority(TKey key, TPriority newPriority)
     {

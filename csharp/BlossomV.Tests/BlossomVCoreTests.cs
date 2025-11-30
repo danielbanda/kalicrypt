@@ -64,7 +64,7 @@ public class BlossomVCoreTests
             // Verify symmetry
             if (match >= 0)
             {
-                Assert.Equal(i, pm.GetMatch(match));
+                Assert.Equal(i, pm.GetMatch(match).Value);
             }
         }
     }
@@ -86,7 +86,7 @@ public class BlossomVCoreTests
 
         // Assert
         // The optimal matching should be (0,1) and (2,3) with cost 100 + 110 = 210
-        Assert.True(cost <= 210); // Should find optimal or near-optimal
+        Assert.True(cost == 210); // Should find optimal or near-optimal
     }
 
     [Fact]
@@ -100,8 +100,9 @@ public class BlossomVCoreTests
         pm.Solve();
 
         // Assert
-        Assert.Equal(1, pm.GetMatch(0));
-        Assert.Equal(0, pm.GetMatch(1));
+        var nodeId = pm.GetMatch(0);
+        Assert.Equal(1, nodeId.Value);
+        Assert.Equal(0, pm.GetMatch(1).Value);
         Assert.Equal(50, pm.ComputePerfectMatchingCost().Value);
     }
 
@@ -155,13 +156,16 @@ public class BlossomVCoreTests
         // Arrange
         var pm = new PerfectMatching(nodeNum: 2, edgeNumMax: 1)
         {
-            Options = { Verbose = true }
+            Options =
+            {
+                Verbose = true
+            }
         };
 
         pm.AddEdge(0, 1, 50);
 
         // Act & Assert - should not throw
         pm.Solve();
-        Assert.Equal(1, pm.GetMatch(0));
+        Assert.True(1 == pm.GetMatch(0));
     }
 }

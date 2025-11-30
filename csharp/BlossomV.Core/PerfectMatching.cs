@@ -222,6 +222,7 @@ public class PerfectMatching
             {
                 _nodes[i].IsOuter = false;
                 _nodes[i].Flag = NodeFlag.Free;
+                _nodes[i].TreeRoot = -1; // Reset tree root for matched nodes
             }
         }
     }

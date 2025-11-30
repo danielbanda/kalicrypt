@@ -68,6 +68,6 @@ public readonly struct EdgeIndex
 }
 
 // Type aliases
-using VertexNum = System.UInt32;
-using NodeIndex = VertexIndex;
-using DefectIndex = VertexIndex;
+// using VertexNum = System.UInt32;
+// using NodeIndex = VertexIndex;
+// using DefectIndex = VertexIndex;

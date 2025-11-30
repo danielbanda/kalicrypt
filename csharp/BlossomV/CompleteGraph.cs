@@ -184,7 +184,7 @@ public class CompleteGraph
             foreach (var (neighbor, neighborWeight) in Vertices[(int)target].Edges)
             {
                 var edgeWeight = weight + neighborWeight;
-                var existingPriority = pq.GetPriority(neighbor);
+                PriorityElement? existingPriority = pq.GetPriority(neighbor);
 
                 if (existingPriority != null && !EqualityComparer<PriorityElement>.Default.Equals(existingPriority.Value, default))
                 {
