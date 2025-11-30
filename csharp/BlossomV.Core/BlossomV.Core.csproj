@@ -8,8 +8,4 @@
     <LangVersion>latest</LangVersion>
   </PropertyGroup>
 
-  <ItemGroup>
-    <ProjectReference Include="..\BlossomV.Core\BlossomV.Core.csproj" />
-  </ItemGroup>
-
 </Project>

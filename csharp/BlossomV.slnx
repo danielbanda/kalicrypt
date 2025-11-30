@@ -1,5 +1,6 @@
 <Solution>
   <Project Path="BlossomV\BlossomV.csproj" />
+  <Project Path="BlossomV.Core\BlossomV.Core.csproj" />
   <Project Path="BlossomV.Tests\BlossomV.Tests.csproj" />
   <Configurations>
     <Configuration Name="Debug" />
