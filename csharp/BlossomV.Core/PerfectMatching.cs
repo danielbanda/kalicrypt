@@ -142,8 +142,13 @@ public class PerfectMatching
         }
 
         // Main algorithm loop
-        while (true)
+        var maxIterations = _nodeNum * _nodeNum; // Prevent infinite loops
+        var iterations = 0;
+
+        while (iterations < maxIterations)
         {
+            iterations++;
+
             // Check if matching is complete
             var unmatchedCount = 0;
             for (var i = 0; i < _nodeNum; i++)
@@ -170,10 +175,27 @@ public class PerfectMatching
             // Grow trees and perform augmentations
             var augmented = GrowAndAugment();
 
-            if (!augmented && !finish)
+            if (!augmented)
             {
+                if (!finish)
+                {
+                    break;
+                }
+
+                // If we can't augment and there are still unmatched nodes,
+                // the graph doesn't have a perfect matching
+                if (Options.Verbose)
+                {
+                    Console.WriteLine($"Warning: Cannot find perfect matching. {unmatchedCount} nodes remain unmatched.");
+                }
+
                 break;
             }
+        }
+
+        if (iterations >= maxIterations)
+        {
+            throw new InvalidOperationException("Algorithm did not converge within maximum iterations");
         }
 
         if (Options.Verbose)
@@ -208,7 +230,7 @@ public class PerfectMatching
     {
         var augmented = false;
 
-        // Simple growth strategy
+        // Simple growth strategy: find edges between nodes in different trees
         for (var t = 0; t < _treeNum; t++)
         {
             var tree = _trees[t];
@@ -224,8 +246,9 @@ public class PerfectMatching
                 var nodeI = _nodes[i];
                 var nodeJ = _nodes[j];
 
-                // Check for augmenting path
-                if (nodeI.TreeRoot == t && nodeJ.Match == null && nodeJ.Flag == NodeFlag.Free)
+                // Check for augmenting path: edge connects two different trees
+                // (both nodes are unmatched roots of their respective trees)
+                if (nodeI.TreeRoot == t && nodeJ.TreeRoot >= 0 && nodeJ.TreeRoot != t)
                 {
                     // Found augmenting path - perform augmentation
                     Augment(i, j, edge);
@@ -233,7 +256,7 @@ public class PerfectMatching
                     break;
                 }
 
-                if (nodeJ.TreeRoot == t && nodeI.Match == null && nodeI.Flag == NodeFlag.Free)
+                if (nodeJ.TreeRoot == t && nodeI.TreeRoot >= 0 && nodeI.TreeRoot != t)
                 {
                     // Found augmenting path - perform augmentation
                     Augment(j, i, edge);

@@ -20,6 +20,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\BlossomV\BlossomV.csproj" />
+    <ProjectReference Include="..\BlossomV.Core\BlossomV.Core.csproj" />
   </ItemGroup>
 
 </Project>
