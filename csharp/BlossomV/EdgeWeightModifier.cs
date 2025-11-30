@@ -14,24 +14,18 @@ public class EdgeWeightModifier
 
     public EdgeWeightModifier()
     {
-        _modified = new List<(uint, int)>();
+        _modified = [];
     }
 
     /// <summary>
     /// Record the modified edge
     /// </summary>
-    public void PushModifiedEdge(uint edgeIndex, int originalWeight)
-    {
-        _modified.Add((edgeIndex, originalWeight));
-    }
+    public void PushModifiedEdge(uint edgeIndex, int originalWeight) => _modified.Add((edgeIndex, originalWeight));
 
     /// <summary>
     /// Check if some edges are not recovered
     /// </summary>
-    public bool HasModifiedEdges()
-    {
-        return _modified.Count > 0;
-    }
+    public bool HasModifiedEdges() => _modified.Count > 0;
 
     /// <summary>
     /// Retrieve the last modified edge

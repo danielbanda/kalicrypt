@@ -1,0 +1,11 @@
+<Solution>
+  <Project Path="BlossomV\BlossomV.csproj" />
+  <Project Path="BlossomV.Tests\BlossomV.Tests.csproj" />
+  <Configurations>
+    <Configuration Name="Debug" />
+    <Configuration Name="Release" />
+  </Configurations>
+  <Platforms>
+    <Platform Name="Any CPU" />
+  </Platforms>
+</Solution>

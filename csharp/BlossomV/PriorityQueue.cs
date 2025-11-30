@@ -16,10 +16,14 @@ public class PriorityQueue<TKey, TPriority> where TPriority : IComparable<TPrior
         _heap = new SortedSet<(TPriority, TKey)>(Comparer<(TPriority Priority, TKey Key)>.Create((a, b) =>
         {
             var cmp = a.Priority.CompareTo(b.Priority);
-            if (cmp != 0) return cmp;
+            if (cmp != 0)
+            {
+                return cmp;
+            }
+
             return Comparer<TKey>.Default.Compare(a.Key, b.Key);
         }));
-        _priorities = new Dictionary<TKey, TPriority>();
+        _priorities = [];
     }
 
     public void Push(TKey key, TPriority priority)
@@ -44,15 +48,9 @@ public class PriorityQueue<TKey, TPriority> where TPriority : IComparable<TPrior
         return (min.Key, min.Priority);
     }
 
-    public TPriority? GetPriority(TKey key)
-    {
-        return _priorities.TryGetValue(key, out var priority) ? priority : default;
-    }
+    public TPriority? GetPriority(TKey key) => _priorities.TryGetValue(key, out var priority) ? priority : default;
 
-    public bool ContainsKey(TKey key)
-    {
-        return _priorities.ContainsKey(key);
-    }
+    public bool ContainsKey(TKey key) => _priorities.ContainsKey(key);
 
     public void ChangePriority(TKey key, TPriority newPriority)
     {

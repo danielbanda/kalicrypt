@@ -15,20 +15,12 @@ public readonly struct PriorityElement : IComparable<PriorityElement>
         Previous = previous;
     }
 
-    public int CompareTo(PriorityElement other)
-    {
+    public int CompareTo(PriorityElement other) =>
         // For min-heap behavior in priority queue
         // Lower weight has higher priority
-        return Weight.CompareTo(other.Weight);
-    }
+        Weight.CompareTo(other.Weight);
 
-    public override bool Equals(object? obj)
-    {
-        return obj is PriorityElement other && Weight == other.Weight;
-    }
+    public override bool Equals(object? obj) => obj is PriorityElement other && Weight == other.Weight;
 
-    public override int GetHashCode()
-    {
-        return Weight.GetHashCode();
-    }
+    public override int GetHashCode() => Weight.GetHashCode();
 }

@@ -25,14 +25,14 @@ public class SolverInitializer
     public SolverInitializer(uint vertexNum, List<(uint, uint, int)> weightedEdges, List<uint> virtualVertices)
     {
         VertexNum = vertexNum;
-        WeightedEdges = weightedEdges ?? new List<(uint, uint, int)>();
-        VirtualVertices = virtualVertices ?? new List<uint>();
+        WeightedEdges = weightedEdges ?? [];
+        VirtualVertices = virtualVertices ?? [];
     }
 
     public SolverInitializer()
     {
         VertexNum = 0;
-        WeightedEdges = new List<(uint, uint, int)>();
-        VirtualVertices = new List<uint>();
+        WeightedEdges = [];
+        VirtualVertices = [];
     }
 }

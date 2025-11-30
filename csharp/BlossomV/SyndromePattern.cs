@@ -23,15 +23,15 @@ public class SyndromePattern
 
     public SyndromePattern(List<uint> defectVertices, List<uint>? erasures = null, List<(uint, int)>? dynamicWeights = null)
     {
-        DefectVertices = defectVertices ?? new List<uint>();
-        Erasures = erasures ?? new List<uint>();
-        DynamicWeights = dynamicWeights ?? new List<(uint, int)>();
+        DefectVertices = defectVertices ?? [];
+        Erasures = erasures ?? [];
+        DynamicWeights = dynamicWeights ?? [];
     }
 
     public SyndromePattern()
     {
-        DefectVertices = new List<uint>();
-        Erasures = new List<uint>();
-        DynamicWeights = new List<(uint, int)>();
+        DefectVertices = [];
+        Erasures = [];
+        DynamicWeights = [];
     }
 }

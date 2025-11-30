@@ -21,7 +21,7 @@ public class CompleteGraphVertex
 
     public CompleteGraphVertex()
     {
-        Edges = new SortedDictionary<uint, int>();
+        Edges = [];
         Timestamp = 0;
     }
 }
@@ -65,7 +65,7 @@ public class CompleteGraph
         VertexNum = vertexNum;
         Vertices = new List<CompleteGraphVertex>((int)vertexNum);
 
-        for (int i = 0; i < vertexNum; i++)
+        for (var i = 0; i < vertexNum; i++)
         {
             Vertices.Add(new CompleteGraphVertex());
         }
@@ -78,7 +78,7 @@ public class CompleteGraph
 
         _activeTimestamp = 0;
         EdgeModifier = new EdgeWeightModifier();
-        WeightedEdges = new List<(uint, uint, int)>(weightedEdges);
+        WeightedEdges = [.. weightedEdges];
     }
 
     /// <summary>
@@ -131,10 +131,7 @@ public class CompleteGraph
     /// <summary>
     /// Load dynamic weights
     /// </summary>
-    public void LoadDynamicWeights(List<(uint, int)> dynamicWeights)
-    {
-        LoadEdgeModifier(new List<(uint, int)>(dynamicWeights));
-    }
+    public void LoadDynamicWeights(List<(uint, int)> dynamicWeights) => LoadEdgeModifier([.. dynamicWeights]);
 
     /// <summary>
     /// Invalidate Dijkstra's algorithm state from previous call
@@ -145,7 +142,7 @@ public class CompleteGraph
         {
             // Rarely happens
             _activeTimestamp = 0;
-            for (int i = 0; i < VertexNum; i++)
+            for (var i = 0; i < VertexNum; i++)
             {
                 Vertices[i].Timestamp = 0; // Refresh all timestamps to avoid conflicts
             }
@@ -162,7 +159,7 @@ public class CompleteGraph
         var activeTimestamp = InvalidatePreviousDijkstra();
         var pq = new PriorityQueue<uint, PriorityElement>();
         pq.Push(vertex, new PriorityElement(0, vertex));
-        var computedEdges = new SortedDictionary<uint, (uint, int)>(); // { peer: (previous, weight) }
+        SortedDictionary<uint, (uint, int)> computedEdges = []; // { peer: (previous, weight) }
 
         while (!pq.IsEmpty)
         {
@@ -230,10 +227,8 @@ public class CompleteGraph
     /// <summary>
     /// Get all complete graph edges from the specific vertex
     /// </summary>
-    public SortedDictionary<uint, (uint Previous, int Weight)> AllEdges(uint vertex)
-    {
-        return AllEdgesWithTerminate(vertex, uint.MaxValue);
-    }
+    public SortedDictionary<uint, (uint Previous, int Weight)> AllEdges(uint vertex) =>
+        AllEdgesWithTerminate(vertex, uint.MaxValue);
 
     /// <summary>
     /// Get minimum-weight path between any two vertices a and b
@@ -244,7 +239,7 @@ public class CompleteGraph
 
         var edges = AllEdgesWithTerminate(a, b);
         var vertex = b;
-        var path = new List<(uint, int)>();
+        List<(uint, int)> path = [];
 
         while (vertex != a)
         {

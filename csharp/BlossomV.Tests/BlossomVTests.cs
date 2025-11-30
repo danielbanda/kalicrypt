@@ -22,14 +22,14 @@ public class BlossomVTests
     public void BlossomVTest1()
     {
         // Arrange
-        uint nodeNum = 4;
-        var edges = new List<(uint, uint, uint)>
-        {
+        const uint nodeNum = 4;
+        List<(uint, uint, uint)> edges =
+        [
             (0, 1, 100),
             (2, 3, 110),
             (0, 2, 500),
             (1, 3, 300)
-        };
+        ];
 
         // Act
         var output = BlossomVSolver.SafeMinimumWeightPerfectMatching(nodeNum, edges);
@@ -42,7 +42,7 @@ public class BlossomVTests
         Assert.Equal(2u, output[3]); // Vertex 3 matches with vertex 2
 
         // Verify it's a perfect matching
-        for (int i = 0; i < nodeNum; i++)
+        for (var i = 0; i < nodeNum; i++)
         {
             var matched = (int)output[i];
             Assert.True(matched >= 0 && matched < nodeNum, $"Matched vertex {matched} is out of range");
@@ -57,19 +57,19 @@ public class BlossomVTests
     public void TestDuplicateEdgeDetection()
     {
         // Arrange
-        uint nodeNum = 4;
-        var edges = new List<(uint, uint, uint)>
-        {
+        const uint nodeNum = 4;
+        List<(uint, uint, uint)> edges =
+        [
             (0, 1, 100),
             (0, 1, 200), // Duplicate edge
             (2, 3, 110)
-        };
+        ];
 
         // Act & Assert
-        #if DEBUG
+#if DEBUG
         Assert.Throws<InvalidOperationException>(() =>
             BlossomVSolver.SafeMinimumWeightPerfectMatching(nodeNum, edges));
-        #endif
+#endif
     }
 
     /// <summary>
@@ -79,18 +79,18 @@ public class BlossomVTests
     public void TestSelfLoopDetection()
     {
         // Arrange
-        uint nodeNum = 4;
-        var edges = new List<(uint, uint, uint)>
-        {
+        const uint nodeNum = 4;
+        List<(uint, uint, uint)> edges =
+        [
             (0, 0, 100), // Self-loop
             (1, 2, 200)
-        };
+        ];
 
         // Act & Assert
-        #if DEBUG
+#if DEBUG
         Assert.Throws<InvalidOperationException>(() =>
             BlossomVSolver.SafeMinimumWeightPerfectMatching(nodeNum, edges));
-        #endif
+#endif
     }
 
     /// <summary>
@@ -103,19 +103,19 @@ public class BlossomVTests
         var initializer = new SolverInitializer
         {
             VertexNum = 6,
-            WeightedEdges = new List<(uint, uint, int)>
-            {
+            WeightedEdges =
+            [
                 (0, 1, 100),
                 (1, 2, 200),
                 (2, 3, 150),
                 (3, 4, 100),
                 (0, 5, 50),  // Virtual vertex 5
                 (4, 5, 50)
-            },
-            VirtualVertices = new List<uint> { 5 }
+            ],
+            VirtualVertices = [5]
         };
 
-        var defectVertices = new List<uint> { 0, 2, 4 }; // Odd number, needs virtual boundary
+        List<uint> defectVertices = [0, 2, 4]; // Odd number, needs virtual boundary
 
         // Act
         var result = BlossomVSolver.BlossomVMwpm(initializer, defectVertices);
@@ -139,13 +139,13 @@ public class CompleteGraphTests
     public void TestCompleteGraphCreation()
     {
         // Arrange
-        uint vertexNum = 4;
-        var edges = new List<(uint, uint, int)>
-        {
+        const uint vertexNum = 4;
+        List<(uint, uint, int)> edges =
+        [
             (0, 1, 100),
             (1, 2, 200),
             (2, 3, 150)
-        };
+        ];
 
         // Act
         var graph = new CompleteGraph(vertexNum, edges);
@@ -161,14 +161,14 @@ public class CompleteGraphTests
     public void TestCompleteGraphAllEdges()
     {
         // Arrange
-        uint vertexNum = 4;
-        var edges = new List<(uint, uint, int)>
-        {
+        const uint vertexNum = 4;
+        List<(uint, uint, int)> edges =
+        [
             (0, 1, 10),
             (1, 2, 20),
             (2, 3, 30),
             (0, 3, 100)
-        };
+        ];
 
         var graph = new CompleteGraph(vertexNum, edges);
 
@@ -185,15 +185,15 @@ public class CompleteGraphTests
     public void TestCompleteGraphReset()
     {
         // Arrange
-        uint vertexNum = 3;
-        var edges = new List<(uint, uint, int)>
-        {
+        const uint vertexNum = 3;
+        List<(uint, uint, int)> edges =
+        [
             (0, 1, 100),
             (1, 2, 200)
-        };
+        ];
 
         var graph = new CompleteGraph(vertexNum, edges);
-        var erasures = new List<uint> { 0 }; // Erase first edge
+        List<uint> erasures = [0]; // Erase first edge
 
         // Act
         graph.LoadErasures(erasures);
@@ -209,13 +209,13 @@ public class CompleteGraphTests
     public void TestGetPath()
     {
         // Arrange
-        uint vertexNum = 4;
-        var edges = new List<(uint, uint, int)>
-        {
+        const uint vertexNum = 4;
+        List<(uint, uint, int)> edges =
+        [
             (0, 1, 10),
             (1, 2, 20),
             (2, 3, 30)
-        };
+        ];
 
         var graph = new CompleteGraph(vertexNum, edges);
 
@@ -241,12 +241,12 @@ public class SolverInitializerTests
         var initializer = new SolverInitializer
         {
             VertexNum = 4,
-            WeightedEdges = new List<(uint, uint, int)>
-            {
+            WeightedEdges =
+            [
                 (0, 1, 100),
                 (2, 3, 200)
-            },
-            VirtualVertices = new List<uint> { 3 }
+            ],
+            VirtualVertices = [3]
         };
 
         // Assert

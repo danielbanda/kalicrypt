@@ -36,8 +36,8 @@ public static class BlossomVSolver
         var weights = new int[edgeNum];
 
         // Sanity checks (debug mode)
-        #if DEBUG
-        var existingEdges = new HashSet<(uint, uint)>();
+#if DEBUG
+        HashSet<(uint, uint)> existingEdges = [];
         foreach (var (i, j, weight) in weightedEdges)
         {
             if (i == j)
@@ -55,10 +55,10 @@ public static class BlossomVSolver
 
             existingEdges.Add((left, right));
         }
-        #endif
+#endif
 
         // Prepare edges and weights arrays
-        for (int e = 0; e < edgeNum; e++)
+        for (var e = 0; e < edgeNum; e++)
         {
             var (i, j, weight) = weightedEdges[e];
 
@@ -89,7 +89,7 @@ public static class BlossomVSolver
 
         // Convert to List<uint>
         var result = new List<uint>((int)nodeNum);
-        for (int i = 0; i < nodeNum; i++)
+        for (var i = 0; i < nodeNum; i++)
         {
             result.Add((uint)output[i]);
         }
@@ -151,12 +151,12 @@ public static class BlossomVSolver
         }
 
         var mappingToDefectVertices = new uint[initializer.VertexNum];
-        for (int i = 0; i < mappingToDefectVertices.Length; i++)
+        for (var i = 0; i < mappingToDefectVertices.Length; i++)
         {
             mappingToDefectVertices[i] = uint.MaxValue;
         }
 
-        for (int i = 0; i < defectVertices.Count; i++)
+        for (var i = 0; i < defectVertices.Count; i++)
         {
             var defectVertex = defectVertices[i];
             if (defectVertex >= initializer.VertexNum)
@@ -178,10 +178,10 @@ public static class BlossomVSolver
         // For each real vertex, add a corresponding virtual vertex to be matched
         var defectNum = defectVertices.Count;
         var legacyVertexNum = defectNum * 2;
-        var legacyWeightedEdges = new List<(uint, uint, uint)>();
-        var boundaries = new List<(uint Vertex, int Weight)?>();
+        List<(uint, uint, uint)> legacyWeightedEdges = [];
+        List<(uint Vertex, int Weight)?> boundaries = [];
 
-        for (int i = 0; i < defectNum; i++)
+        for (var i = 0; i < defectNum; i++)
         {
             var defectVertex = defectVertices[i];
             var completeGraphEdges = completeGraph.AllEdges(defectVertex);
@@ -216,7 +216,7 @@ public static class BlossomVSolver
                 }
             }
 
-            for (int j = i + 1; j < defectNum; j++)
+            for (var j = i + 1; j < defectNum; j++)
             {
                 // Virtual boundaries are always fully connected with weight 0
                 legacyWeightedEdges.Add(((uint)(i + defectNum), (uint)(j + defectNum), 0));
@@ -225,9 +225,9 @@ public static class BlossomVSolver
 
         // Run Blossom V to get matchings
         var matchings = SafeMinimumWeightPerfectMatching((uint)legacyVertexNum, legacyWeightedEdges);
-        var mwpmResult = new List<uint>();
+        List<uint> mwpmResult = [];
 
-        for (int i = 0; i < defectNum; i++)
+        for (var i = 0; i < defectNum; i++)
         {
             var j = (int)matchings[i];
             if (j < defectNum)
